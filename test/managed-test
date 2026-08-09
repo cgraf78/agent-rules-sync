@@ -1,0 +1,498 @@
+#!/usr/bin/env bash
+# Managed block publication, state, stale cleanup, migration, and uninstall.
+
+set -o pipefail
+export NO_COLOR=1
+
+repo_root=$(cd "${BASH_SOURCE[0]%/*}/.." && pwd -P) || exit 1
+# shellcheck source=lib/test.sh
+. "$repo_root/test/lib/test.sh"
+
+cli="$repo_root/bin/agent-rules-sync"
+work=$(_tmpdir)
+home="$work/home"
+config="$work/config"
+state="$work/state"
+rules="$work/rules.d"
+playbooks="$work/playbooks.d"
+manifest="$work/manifest.tsv"
+claude="$home/.claude/CLAUDE.md"
+custom="$work/custom/AGENTS.md"
+mkdir -p "$home/.claude" "$rules" "$playbooks"
+
+cat >"$rules/main.md" <<'EOF'
+# Main
+
+<!-- agent-rule-id: managed-main -->
+
+managed rule
+EOF
+cat >"$manifest" <<EOF
+version	agent-rules-sync-manifest-v1
+rule-root	$rules
+playbook-root	$playbooks
+rule	$rules/main.md
+target	claude
+target-file	$custom
+EOF
+printf 'local claude note\n\n\n' >"$claude"
+
+HOME="$home" XDG_CONFIG_HOME="$config" XDG_STATE_HOME="$state" \
+  "$cli" --manifest "$manifest" >"$work/sync.out" 2>"$work/sync.err"
+_assert_exit "publication: initial sync succeeds" 0 "$?"
+_assert_contains "publication: preserves unmanaged content" \
+  "local claude note" "$(<"$claude")"
+_assert_contains "publication: appends one managed block" \
+  "# agent-rules-sync:aggregate begin" "$(<"$claude")"
+_assert_mode "publication: target is private" 600 "$claude"
+_assert_mode "publication: new target parent is private" 700 "${custom%/*}"
+_assert_file_exists "state: records current targets" \
+  "$state/agent-rules-sync/targets-v1"
+_assert_mode "state: target inventory is private" 600 \
+  "$state/agent-rules-sync/targets-v1"
+
+chmod 644 "$claude"
+HOME="$home" XDG_CONFIG_HOME="$config" XDG_STATE_HOME="$state" \
+  "$cli" --manifest "$manifest" >/dev/null 2>"$work/mode-repair.err"
+_assert_exit "publication: mode-only repair succeeds" 0 "$?"
+_assert_mode "publication: repeated sync repairs a widened target mode" \
+  600 "$claude"
+
+first=$(<"$claude")
+HOME="$home" XDG_CONFIG_HOME="$config" XDG_STATE_HOME="$state" \
+  "$cli" --manifest "$manifest" >/dev/null 2>"$work/resync.err"
+_assert_exit "publication: repeated sync succeeds" 0 "$?"
+_assert_file_content "publication: repeated sync is content-idempotent" \
+  "$first" "$claude"
+marker_count=$(awk '/^# agent-rules-sync:aggregate begin$/{count++} END{print count+0}' "$claude")
+_assert_eq "publication: repeated sync keeps one block" 1 "$marker_count"
+
+# A target profile change removes only provider-owned text from old targets.
+cat >"$manifest" <<EOF
+version	agent-rules-sync-manifest-v1
+rule-root	$rules
+playbook-root	$playbooks
+rule	$rules/main.md
+target	codex
+EOF
+HOME="$home" XDG_CONFIG_HOME="$config" XDG_STATE_HOME="$state" \
+  "$cli" --manifest "$manifest" >/dev/null 2>"$work/switch.err"
+_assert_exit "stale cleanup: profile switch succeeds" 0 "$?"
+_assert_file_content "stale cleanup: preserves old target's unmanaged text" \
+  "local claude note" "$claude"
+_assert_path_missing "stale cleanup: removes provider-only custom target" "$custom"
+_assert_file_exists "stale cleanup: publishes replacement target" \
+  "$home/.codex/AGENTS.md"
+
+# The provider replaces a retired dot-managed block in place and consumes old
+# target state only after all selected outputs have been published.
+legacy_target="$home/.gemini/GEMINI.md"
+legacy_stale="$home/.config/opencode/AGENTS.md"
+mkdir -p "${legacy_target%/*}" "${legacy_stale%/*}" "$state/dot"
+cat >"$legacy_target" <<'EOF'
+local gemini note
+
+# dot-managed:agent-rules:aggregate begin
+# DO NOT EDIT: changes will be overwritten by dot update
+# source: /old/rules
+old generated rule
+# dot-managed:agent-rules:aggregate end
+EOF
+cat >"$legacy_stale" <<'EOF'
+# dot-managed:agent-rules:aggregate begin
+old stale rule
+# dot-managed:agent-rules:aggregate end
+EOF
+cat >"$state/dot/agent-rules-publish-cache-v3" <<EOF
+version	dotfiles-agent-rules-cache-v3
+target	$legacy_target
+target	$legacy_stale
+EOF
+cat >"$manifest" <<EOF
+version	agent-rules-sync-manifest-v1
+rule-root	$rules
+playbook-root	$playbooks
+rule	$rules/main.md
+target	gemini
+EOF
+HOME="$home" XDG_CONFIG_HOME="$config" XDG_STATE_HOME="$state" \
+  "$cli" --manifest "$manifest" >/dev/null 2>"$work/takeover.err"
+_assert_exit "migration: dot-managed takeover succeeds" 0 "$?"
+legacy_text=$(<"$legacy_target")
+_assert_contains "migration: preserves unmanaged legacy-target text" \
+  "local gemini note" "$legacy_text"
+_assert_contains "migration: installs provider marker" \
+  "# agent-rules-sync:aggregate begin" "$legacy_text"
+_assert_not_contains "migration: removes retired marker" \
+  "# dot-managed:agent-rules:" "$legacy_text"
+_assert_path_missing "migration: prunes stale dot-managed target" "$legacy_stale"
+_assert_file_missing "migration: consumes retired target inventory" \
+  "$state/dot/agent-rules-publish-cache-v3"
+
+# Retired fragment-link publishing used a directory target. Only symlinks back
+# into the exact old config tree are owned; neighboring links remain intact.
+legacy_rules="$home/.claude/rules"
+legacy_source="$home/.config/agent-rules/shared/old.md"
+mkdir -p "$legacy_rules" "${legacy_source%/*}" "$state/dot"
+printf 'legacy source\n' >"$legacy_source"
+printf 'manual source\n' >"$work/manual.md"
+ln -s "$legacy_source" "$legacy_rules/owned.md"
+ln -s "$work/manual.md" "$legacy_rules/manual.md"
+cat >"$state/dot/agent-rules-publish-cache-v1" <<EOF
+version	dotfiles-agent-rules-cache-v2
+target	$legacy_rules
+EOF
+HOME="$home" XDG_CONFIG_HOME="$config" XDG_STATE_HOME="$state" \
+  "$cli" --manifest "$manifest" >/dev/null 2>"$work/link-takeover.err"
+_assert_exit "migration: legacy link cleanup succeeds" 0 "$?"
+_assert_path_missing "migration: removes retired managed fragment link" \
+  "$legacy_rules/owned.md"
+if [[ -L "$legacy_rules/manual.md" ]]; then
+  _pass "migration: preserves unrelated fragment link"
+else
+  _fail "migration: preserves unrelated fragment link"
+fi
+_assert_file_missing "migration: consumes retired link inventory" \
+  "$state/dot/agent-rules-publish-cache-v1"
+
+# Malformed ownership delimiters fail closed rather than dropping unmanaged
+# text following an unterminated generated block.
+malformed="$work/malformed/AGENTS.md"
+mkdir -p "${malformed%/*}"
+cat >"$malformed" <<'EOF'
+keep before
+# agent-rules-sync:aggregate begin
+unterminated generated text
+keep after
+EOF
+malformed_before=$(<"$malformed")
+cat >"$manifest" <<EOF
+version	agent-rules-sync-manifest-v1
+rule-root	$rules
+playbook-root	$playbooks
+rule	$rules/main.md
+target-file	$malformed
+EOF
+set +e
+HOME="$home" XDG_CONFIG_HOME="$config" XDG_STATE_HOME="$state" \
+  "$cli" --manifest "$manifest" >/dev/null 2>"$work/malformed.err"
+status=$?
+set -e
+_assert_exit "publication: malformed managed block fails closed" 1 "$status"
+malformed_parent=$(cd -P -- "${malformed%/*}" && pwd -P)
+_assert_contains "publication: malformed-block error names the target" \
+  "$malformed_parent/${malformed##*/}" "$(<"$work/malformed.err")"
+_assert_file_content "publication: malformed target remains byte-for-byte intact" \
+  "$malformed_before" "$malformed"
+
+mismatched="$work/mismatched/AGENTS.md"
+mkdir -p "${mismatched%/*}"
+cat >"$mismatched" <<'EOF'
+keep before
+# dot-managed:agent-rules:first begin
+old generated text
+# dot-managed:agent-rules:second end
+keep after
+EOF
+mismatched_before=$(<"$mismatched")
+cat >"$manifest" <<EOF
+version	agent-rules-sync-manifest-v1
+rule-root	$rules
+playbook-root	$playbooks
+rule	$rules/main.md
+target-file	$mismatched
+EOF
+set +e
+HOME="$home" XDG_CONFIG_HOME="$config" XDG_STATE_HOME="$state" \
+  "$cli" --manifest "$manifest" >/dev/null 2>"$work/mismatched.err"
+status=$?
+set -e
+_assert_exit "publication: mismatched managed markers fail closed" 1 "$status"
+_assert_file_content "publication: mismatched-marker target remains intact" \
+  "$mismatched_before" "$mismatched"
+
+# A cache-shaped file is not migration authority until its exact historical
+# version has been recognized.
+bad_legacy_work=$(_tmpdir)
+bad_legacy_home="$bad_legacy_work/home"
+bad_legacy_state="$bad_legacy_work/state"
+bad_legacy_rules="$bad_legacy_work/rules"
+bad_legacy_playbooks="$bad_legacy_work/playbooks"
+bad_legacy_manifest="$bad_legacy_work/manifest.tsv"
+bad_legacy_target="$bad_legacy_work/stale/AGENTS.md"
+bad_legacy_cache="$bad_legacy_state/dot/agent-rules-publish-cache-v3"
+mkdir -p "$bad_legacy_home" "$bad_legacy_rules" "$bad_legacy_playbooks" \
+  "${bad_legacy_target%/*}" "${bad_legacy_cache%/*}"
+cat >"$bad_legacy_rules/main.md" <<'EOF'
+# Main
+<!-- agent-rule-id: bad-legacy-main -->
+EOF
+cat >"$bad_legacy_target" <<'EOF'
+# dot-managed:agent-rules:aggregate begin
+old generated text
+# dot-managed:agent-rules:aggregate end
+EOF
+cat >"$bad_legacy_cache" <<EOF
+version	unrecognized-cache-v9
+target	$bad_legacy_target
+EOF
+cat >"$bad_legacy_manifest" <<EOF
+version	agent-rules-sync-manifest-v1
+rule-root	$bad_legacy_rules
+playbook-root	$bad_legacy_playbooks
+rule	$bad_legacy_rules/main.md
+target	claude
+EOF
+bad_legacy_before=$(<"$bad_legacy_target")
+set +e
+HOME="$bad_legacy_home" XDG_STATE_HOME="$bad_legacy_state" \
+  "$cli" --manifest "$bad_legacy_manifest" \
+  >"$bad_legacy_work/sync.out" 2>"$bad_legacy_work/sync.err"
+status=$?
+set -e
+_assert_exit "migration: unrecognized legacy inventory is rejected" 1 "$status"
+_assert_contains "migration: legacy-version error is actionable" \
+  "unsupported legacy target inventory version" \
+  "$(<"$bad_legacy_work/sync.err")"
+_assert_file_content "migration: unrecognized inventory target remains intact" \
+  "$bad_legacy_before" "$bad_legacy_target"
+_assert_file_exists "migration: unrecognized inventory is retained" \
+  "$bad_legacy_cache"
+
+# Destination policy may never name an input or the provider's own state.
+_collision_case() {
+  local name="$1" collision_kind="$2"
+  local fixture collision_home collision_state collision_rules collision_playbooks
+  local collision_manifest collision_rule collision_target before
+  fixture=$(_tmpdir)
+  collision_home="$fixture/home"
+  collision_state="$fixture/state"
+  collision_rules="$fixture/rules"
+  collision_playbooks="$fixture/playbooks"
+  collision_manifest="$fixture/manifest.tsv"
+  collision_rule="$collision_rules/main.md"
+  mkdir -p "$collision_home" "$collision_rules" "$collision_playbooks"
+  cat >"$collision_rule" <<EOF
+# Collision
+<!-- agent-rule-id: collision-$name -->
+EOF
+  case "$collision_kind" in
+    manifest) collision_target="$collision_manifest" ;;
+    source) collision_target="$collision_rule" ;;
+    state) collision_target="$collision_state/agent-rules-sync/targets-v1" ;;
+    state-dot-alias)
+      collision_target="$collision_state/agent-rules-sync/unused/../targets-v1"
+      ;;
+    state-symlink-alias)
+      mkdir -p "$collision_state/agent-rules-sync"
+      ln -s "$collision_state/agent-rules-sync" "$fixture/state-alias"
+      collision_target="$fixture/state-alias/targets-v1"
+      ;;
+    lock) collision_target="$collision_state/agent-rules-sync/lock/pid" ;;
+    lock-dot-alias)
+      collision_target="$collision_state/agent-rules-sync/unused/../lock/pid"
+      ;;
+    reclaim-symlink-alias)
+      mkdir -p "$collision_state/agent-rules-sync"
+      ln -s "$collision_state/agent-rules-sync" "$fixture/state-alias"
+      collision_target="$fixture/state-alias/lock.reclaim/held"
+      ;;
+    *) return 1 ;;
+  esac
+  cat >"$collision_manifest" <<EOF
+version	agent-rules-sync-manifest-v1
+rule-root	$collision_rules
+playbook-root	$collision_playbooks
+rule	$collision_rule
+target-file	$collision_target
+EOF
+  if [[ -f "$collision_target" ]]; then
+    before=$(<"$collision_target")
+  else
+    before=''
+  fi
+  set +e
+  HOME="$collision_home" XDG_STATE_HOME="$collision_state" \
+    "$cli" --manifest "$collision_manifest" \
+    >"$fixture/sync.out" 2>"$fixture/sync.err"
+  local rc=$?
+  set -e
+  _assert_exit "collision: rejects $name" 1 "$rc"
+  _assert_contains "collision: $name error is actionable" \
+    "target collides with" "$(<"$fixture/sync.err")"
+  if [[ -n "$before" ]]; then
+    _assert_file_content "collision: preserves $name input" \
+      "$before" "$collision_target"
+  else
+    _assert_file_missing "collision: creates no $name state target" \
+      "$collision_target"
+  fi
+}
+
+_collision_case manifest-target manifest
+_collision_case rule-source-target source
+_collision_case provider-state-target state
+_collision_case provider-state-dot-alias state-dot-alias
+_collision_case provider-state-symlink-alias state-symlink-alias
+_collision_case provider-lock-owner lock
+_collision_case provider-lock-dot-alias lock-dot-alias
+_collision_case provider-reclaim-symlink-alias reclaim-symlink-alias
+
+# Two spellings of one destination must be reconciled as one logical target.
+# Otherwise the next profile can keep the direct spelling, classify the alias
+# as stale, and accidentally prune the still-selected file through that alias.
+alias_work=$(_tmpdir)
+alias_home="$alias_work/home"
+alias_state="$alias_work/state"
+alias_rules="$alias_work/rules"
+alias_playbooks="$alias_work/playbooks"
+alias_manifest="$alias_work/manifest.tsv"
+alias_target_dir="$alias_work/targets"
+alias_target="$alias_target_dir/AGENTS.md"
+alias_link="$alias_work/target-alias"
+mkdir -p "$alias_home" "$alias_rules" "$alias_playbooks" "$alias_target_dir"
+ln -s "$alias_target_dir" "$alias_link"
+cat >"$alias_rules/main.md" <<'EOF'
+# Main
+<!-- agent-rule-id: alias-main -->
+EOF
+cat >"$alias_manifest" <<EOF
+version	agent-rules-sync-manifest-v1
+rule-root	$alias_rules
+playbook-root	$alias_playbooks
+rule	$alias_rules/main.md
+target-file	$alias_link/AGENTS.md
+target-file	$alias_target
+EOF
+HOME="$alias_home" XDG_STATE_HOME="$alias_state" \
+  "$cli" --manifest "$alias_manifest" \
+  >"$alias_work/first.out" 2>"$alias_work/first.err"
+_assert_exit "target aliases: initial sync succeeds" 0 "$?"
+cat >"$alias_manifest" <<EOF
+version	agent-rules-sync-manifest-v1
+rule-root	$alias_rules
+playbook-root	$alias_playbooks
+rule	$alias_rules/main.md
+target-file	$alias_target
+EOF
+HOME="$alias_home" XDG_STATE_HOME="$alias_state" \
+  "$cli" --manifest "$alias_manifest" \
+  >"$alias_work/second.out" 2>"$alias_work/second.err"
+_assert_exit "target aliases: removing duplicate spelling succeeds" 0 "$?"
+_assert_file_exists "target aliases: selected destination remains published" \
+  "$alias_target"
+_assert_contains "target aliases: selected destination keeps its managed block" \
+  "# agent-rules-sync:aggregate begin" "$(<"$alias_target")"
+
+# Persist the resolved parent identity rather than a symlinked spelling. If the
+# symlink later moves, stale cleanup still needs the original destination path
+# in order to remove the provider-owned block from the old location.
+retarget_work=$(_tmpdir)
+retarget_home="$retarget_work/home"
+retarget_state="$retarget_work/state"
+retarget_rules="$retarget_work/rules"
+retarget_playbooks="$retarget_work/playbooks"
+retarget_manifest="$retarget_work/manifest.tsv"
+retarget_a="$retarget_work/target-a"
+retarget_b="$retarget_work/target-b"
+retarget_link="$retarget_work/active-target"
+mkdir -p "$retarget_home" "$retarget_rules" "$retarget_playbooks" \
+  "$retarget_a" "$retarget_b"
+ln -s "$retarget_a" "$retarget_link"
+cat >"$retarget_rules/main.md" <<'EOF'
+# Main
+<!-- agent-rule-id: retarget-main -->
+EOF
+cat >"$retarget_manifest" <<EOF
+version	agent-rules-sync-manifest-v1
+rule-root	$retarget_rules
+playbook-root	$retarget_playbooks
+rule	$retarget_rules/main.md
+target-file	$retarget_link/AGENTS.md
+EOF
+HOME="$retarget_home" XDG_STATE_HOME="$retarget_state" \
+  "$cli" --manifest "$retarget_manifest" \
+  >"$retarget_work/first.out" 2>"$retarget_work/first.err"
+_assert_exit "target retarget: initial sync succeeds" 0 "$?"
+retarget_a_canonical=$(cd -P -- "$retarget_a" && pwd -P)
+_assert_contains "target retarget: state records the resolved destination" \
+  $'target\t'"$retarget_a_canonical/AGENTS.md" \
+  "$(<"$retarget_state/agent-rules-sync/targets-v1")"
+ln -sfn "$retarget_b" "$retarget_link"
+HOME="$retarget_home" XDG_STATE_HOME="$retarget_state" \
+  "$cli" --manifest "$retarget_manifest" \
+  >"$retarget_work/second.out" 2>"$retarget_work/second.err"
+_assert_exit "target retarget: second sync succeeds" 0 "$?"
+_assert_file_missing "target retarget: old destination is pruned" \
+  "$retarget_a/AGENTS.md"
+_assert_contains "target retarget: new destination is published" \
+  "# agent-rules-sync:aggregate begin" "$(<"$retarget_b/AGENTS.md")"
+
+# A live lock enforces the single-writer contract. A dead owner's lock is
+# reclaimed so an untrappable process death cannot permanently wedge sync.
+lock_work=$(_tmpdir)
+lock_home="$lock_work/home"
+lock_state="$lock_work/state"
+lock_rules="$lock_work/rules"
+lock_playbooks="$lock_work/playbooks"
+lock_manifest="$lock_work/manifest.tsv"
+lock_target="$lock_work/target/AGENTS.md"
+lock_dir="$lock_state/agent-rules-sync/lock"
+mkdir -p "$lock_home" "$lock_rules" "$lock_playbooks" "$lock_dir"
+cat >"$lock_rules/main.md" <<'EOF'
+# Main
+<!-- agent-rule-id: lock-main -->
+EOF
+cat >"$lock_manifest" <<EOF
+version	agent-rules-sync-manifest-v1
+rule-root	$lock_rules
+playbook-root	$lock_playbooks
+rule	$lock_rules/main.md
+target-file	$lock_target
+EOF
+printf '%s\n' "$$" >"$lock_dir/pid"
+set +e
+HOME="$lock_home" XDG_STATE_HOME="$lock_state" \
+  "$cli" --manifest "$lock_manifest" \
+  >"$lock_work/live.out" 2>"$lock_work/live.err"
+status=$?
+set -e
+_assert_exit "locking: a concurrent live owner is rejected" 1 "$status"
+_assert_contains "locking: live-owner error is actionable" \
+  "another agent-rules-sync invocation" "$(<"$lock_work/live.err")"
+_assert_file_missing "locking: rejected invocation publishes no target" "$lock_target"
+
+printf '%s\n' 999999999 >"$lock_dir/pid"
+HOME="$lock_home" XDG_STATE_HOME="$lock_state" \
+  "$cli" --manifest "$lock_manifest" \
+  >"$lock_work/stale.out" 2>"$lock_work/stale.err"
+_assert_exit "locking: a dead owner's lock is reclaimed" 0 "$?"
+_assert_file_exists "locking: reclaimed invocation publishes its target" \
+  "$lock_target"
+_assert_path_missing "locking: successful invocation releases its lock" "$lock_dir"
+
+# Restore a valid profile, then prove uninstall is driven by durable ownership
+# state rather than by a manifest that may already have disappeared.
+cat >"$manifest" <<EOF
+version	agent-rules-sync-manifest-v1
+rule-root	$rules
+playbook-root	$playbooks
+rule	$rules/main.md
+target	claude
+target-file	$custom
+EOF
+HOME="$home" XDG_CONFIG_HOME="$config" XDG_STATE_HOME="$state" \
+  "$cli" --manifest "$manifest" >/dev/null 2>"$work/final-sync.err"
+_assert_exit "uninstall setup: sync succeeds" 0 "$?"
+rm -f "$manifest"
+HOME="$home" XDG_CONFIG_HOME="$config" XDG_STATE_HOME="$state" \
+  "$cli" uninstall >"$work/uninstall.out" 2>"$work/uninstall.err"
+_assert_exit "uninstall: succeeds without the manifest" 0 "$?"
+_assert_file_content "uninstall: preserves unmanaged Claude text" \
+  "local claude note" "$claude"
+_assert_path_missing "uninstall: removes provider-only custom target" "$custom"
+_assert_file_missing "uninstall: removes durable target inventory" \
+  "$state/agent-rules-sync/targets-v1"
+_assert_file_exists "uninstall: does not remove policy source" "$rules/main.md"
+
+_test_summary

@@ -1,0 +1,180 @@
+#!/usr/bin/env bash
+# Public CLI, XDG fallback, argument validation, and signal cleanup.
+
+set -o pipefail
+export NO_COLOR=1
+
+repo_root=$(cd "${BASH_SOURCE[0]%/*}/.." && pwd -P) || exit 1
+# shellcheck source=lib/test.sh
+. "$repo_root/test/lib/test.sh"
+
+cli="$repo_root/bin/agent-rules-sync"
+
+help_output=$($cli --help 2>&1)
+_assert_exit "help: succeeds" 0 "$?"
+_assert_contains "help: names the sync executable" "agent-rules-sync" "$help_output"
+_assert_contains "help: documents uninstall" "uninstall" "$help_output"
+_assert_contains "help: documents manifest selection" "--manifest" "$help_output"
+
+work=$(_tmpdir)
+home="$work/home"
+mkdir -p "$home"
+
+if [[ -x /bin/bash ]] &&
+  (($(/bin/bash -c 'printf "%s\n" "${BASH_VERSINFO[0]}"') < 4)); then
+  set +e
+  HOME="$home" /bin/bash "$cli" --help \
+    >"$work/bash3.out" 2>"$work/bash3.err"
+  status=$?
+  set -e
+  _assert_exit "runtime: rejects Bash older than 4" 1 "$status"
+  _assert_contains "runtime: Bash error is actionable" \
+    "Bash 4.0 or newer is required" "$(<"$work/bash3.err")"
+fi
+
+set +e
+HOME="$home" "$cli" >"$work/no-args.out" 2>"$work/no-args.err"
+status=$?
+set -e
+_assert_exit "default sync: missing manifest is rejected" 1 "$status"
+_assert_path_missing "default sync: missing manifest creates no state" \
+  "$home/.local/state/agent-rules-sync"
+
+set +e
+HOME="$home" "$cli" --manifest relative.tsv \
+  >"$work/relative.out" 2>"$work/relative.err"
+status=$?
+set -e
+_assert_exit "validation: relative manifest is rejected" 1 "$status"
+_assert_contains "validation: relative-manifest error is actionable" \
+  "manifest path must be absolute" "$(<"$work/relative.err")"
+
+set +e
+HOME="$home" "$cli" uninstall unexpected \
+  >"$work/extra.out" 2>"$work/extra.err"
+status=$?
+set -e
+_assert_exit "validation: uninstall rejects extra arguments" 2 "$status"
+
+# Relative XDG roots fall back to HOME rather than depending on cwd.
+path_output=$(HOME="$home" XDG_CONFIG_HOME=relative/config bash -c '
+  . "$1/lib/agent-rules-sync/paths.sh"
+  agent_rules_default_manifest
+' _ "$repo_root")
+_assert_eq "XDG config: relative root falls back to HOME" \
+  "$home/.config/agent-rules-sync/manifest.tsv" "$path_output"
+
+set +e
+HOME="$home" XDG_CONFIG_HOME="$work/"$'config\nbad' bash -c '
+  . "$1/lib/agent-rules-sync/paths.sh"
+  agent_rules_default_manifest
+' _ "$repo_root" >"$work/control-xdg.out" 2>"$work/control-xdg.err"
+status=$?
+set -e
+_assert_exit "XDG config: absolute root with a control character is rejected" \
+  1 "$status"
+_assert_contains "XDG config: control-root error is actionable" \
+  "control character" "$(<"$work/control-xdg.err")"
+
+set +e
+# shellcheck disable=SC2016  # Positional parameters expand in the child shell.
+env -u HOME -u XDG_CONFIG_HOME bash -c '
+  . "$1/lib/agent-rules-sync/paths.sh"
+  agent_rules_default_manifest
+' _ "$repo_root" >"$work/no-home.out" 2>"$work/no-home.err"
+status=$?
+set -e
+_assert_exit "path validation: missing HOME is rejected" 1 "$status"
+_assert_eq "path validation: missing HOME emits no partial path" \
+  "" "$(<"$work/no-home.out")"
+
+# With no explicit argument, the CLI reads the XDG manifest. The environment
+# override is useful to configuration managers that stage a manifest beside
+# an atomic update before invoking sync.
+config="$work/config"
+state="$work/state"
+rules="$work/rules"
+playbooks="$work/playbooks"
+mkdir -p "$config/agent-rules-sync" "$rules" "$playbooks"
+cat >"$rules/main.md" <<'EOF'
+# Main
+<!-- agent-rule-id: cli-main -->
+EOF
+cat >"$config/agent-rules-sync/manifest.tsv" <<EOF
+version	agent-rules-sync-manifest-v1
+rule-root	$rules
+playbook-root	$playbooks
+rule	$rules/main.md
+target	claude
+EOF
+HOME="$home" XDG_CONFIG_HOME="$config" XDG_STATE_HOME="$state" \
+  "$cli" >"$work/default.out" 2>"$work/default.err"
+_assert_exit "manifest selection: XDG default succeeds" 0 "$?"
+_assert_file_exists "manifest selection: XDG default publishes" \
+  "$home/.claude/CLAUDE.md"
+
+control_manifest="$work/"$'control\nmanifest.tsv'
+cp "$config/agent-rules-sync/manifest.tsv" "$control_manifest"
+set +e
+HOME="$home" XDG_CONFIG_HOME="$config" XDG_STATE_HOME="$state" \
+  "$cli" --manifest "$control_manifest" \
+  >"$work/control.out" 2>"$work/control.err"
+status=$?
+set -e
+_assert_exit "path validation: control character in manifest path is rejected" \
+  1 "$status"
+_assert_contains "path validation: control-path error is actionable" \
+  "control character" "$(<"$work/control.err")"
+
+override="$work/override.tsv"
+cat >"$override" <<EOF
+version	agent-rules-sync-manifest-v1
+rule-root	$rules
+playbook-root	$playbooks
+rule	$rules/main.md
+target	codex
+EOF
+HOME="$home" XDG_CONFIG_HOME="$config" XDG_STATE_HOME="$state" \
+  AGENT_RULES_SYNC_MANIFEST="$override" "$cli" \
+  >"$work/override.out" 2>"$work/override.err"
+_assert_exit "manifest selection: environment override succeeds" 0 "$?"
+_assert_file_exists "manifest selection: environment override is used" \
+  "$home/.codex/AGENTS.md"
+
+# Scratch ownership is invocation-scoped and signal cleanup preserves the
+# conventional terminal status.
+signal_path_file="$work/signal-path"
+set +e
+bash -c '
+  . "$1/lib/agent-rules-sync/temp.sh"
+  _agent_rules_install_temp_traps
+  _agent_rules_sibling_tmp_for "$2/probe"
+  printf "%s\n" "$REPLY" >"$3"
+  kill -TERM "$$"
+' _ "$repo_root" "$work" "$signal_path_file"
+status=$?
+set -e
+_assert_exit "signal cleanup: preserves TERM status" 143 "$status"
+signal_path=$(<"$signal_path_file")
+_assert_path_missing "signal cleanup: removes tracked scratch" "$signal_path"
+
+# Treat mktemp output as untrusted. A broken implementation must not register
+# an arbitrary path for recursive EXIT cleanup.
+outside="$work/outside-owned-elsewhere"
+printf 'preserve me\n' >"$outside"
+set +e
+bash -c '
+  . "$1/lib/agent-rules-sync/temp.sh"
+  mktemp() { printf "%s\n" "$3"; }
+  _agent_rules_install_temp_traps
+  if _agent_rules_sibling_tmp_for "$2/probe"; then
+    exit 9
+  fi
+' _ "$repo_root" "$work" "$outside"
+status=$?
+set -e
+_assert_exit "temporary path: out-of-sibling mktemp result is rejected" 0 "$status"
+_assert_file_content "temporary path: unrelated file is never cleaned" \
+  "preserve me" "$outside"
+
+_test_summary
