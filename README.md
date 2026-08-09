@@ -160,11 +160,9 @@ at its old destination. The provider removes a destination file only when no
 unmanaged text remains.
 
 A sync recognizes the exact historical `dot-managed:agent-rules` block family
-and the retired dot target inventories below `$XDG_STATE_HOME/dot`. It can also
-retire fragment symlinks recorded by the old publisher, but only when their
-resolved source is below the exact historical `$HOME/.config/agent-rules`
-tree. Unknown directories, links, files, and unmanaged target text remain
-untouched.
+and its versioned v3 target inventory below `$XDG_STATE_HOME/dot`. Older
+fragment-link inventories are not authority: caller-owned source trees,
+including `$HOME/.config/agent-rules`, and unrelated links remain untouched.
 
 `uninstall` removes provider-owned blocks from recorded targets and known
 built-ins, then removes provider state. It does not delete manifests, source

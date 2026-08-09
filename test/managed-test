@@ -129,8 +129,9 @@ _assert_path_missing "migration: prunes stale dot-managed target" "$legacy_stale
 _assert_file_missing "migration: consumes retired target inventory" \
   "$state/dot/agent-rules-publish-cache-v3"
 
-# Retired fragment-link publishing used a directory target. Only symlinks back
-# into the exact old config tree are owned; neighboring links remain intact.
+# The retired v1 fragment-link inventory is no longer migration authority.
+# Reusing ~/.config/agent-rules as a current caller-owned source tree must not
+# let an obsolete cache delete either source-related or neighboring links.
 legacy_rules="$home/.claude/rules"
 legacy_source="$home/.config/agent-rules/shared/old.md"
 mkdir -p "$legacy_rules" "${legacy_source%/*}" "$state/dot"
@@ -144,15 +145,18 @@ target	$legacy_rules
 EOF
 HOME="$home" XDG_CONFIG_HOME="$config" XDG_STATE_HOME="$state" \
   "$cli" --manifest "$manifest" >/dev/null 2>"$work/link-takeover.err"
-_assert_exit "migration: legacy link cleanup succeeds" 0 "$?"
-_assert_path_missing "migration: removes retired managed fragment link" \
-  "$legacy_rules/owned.md"
-if [[ -L "$legacy_rules/manual.md" ]]; then
-  _pass "migration: preserves unrelated fragment link"
+_assert_exit "migration: retired link inventory is ignored" 0 "$?"
+if [[ -L "$legacy_rules/owned.md" ]]; then
+  _pass "migration: preserves link into caller-owned agent-rules tree"
 else
-  _fail "migration: preserves unrelated fragment link"
+  _fail "migration: preserves link into caller-owned agent-rules tree"
 fi
-_assert_file_missing "migration: consumes retired link inventory" \
+if [[ -L "$legacy_rules/manual.md" ]]; then
+  _pass "migration: preserves neighboring fragment link"
+else
+  _fail "migration: preserves neighboring fragment link"
+fi
+_assert_file_exists "migration: leaves retired link inventory untouched" \
   "$state/dot/agent-rules-publish-cache-v1"
 
 # Malformed ownership delimiters fail closed rather than dropping unmanaged
