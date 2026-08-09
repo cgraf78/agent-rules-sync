@@ -54,7 +54,7 @@ agent_rules_sync() {
 }
 
 _agent_rules_uninstall_locked() {
-  local target agent dir
+  local target agent
   _agent_rules_load_previous || return 1
 
   # Known built-ins remain discoverable even if the inventory was manually
@@ -65,9 +65,6 @@ _agent_rules_uninstall_locked() {
   done
   for target in "${_AGENT_RULES_PREVIOUS_TARGETS[@]+"${_AGENT_RULES_PREVIOUS_TARGETS[@]}"}"; do
     _agent_rules_prune_target "$target" || return 1
-  done
-  for dir in "${_AGENT_RULES_LEGACY_DIRS[@]+"${_AGENT_RULES_LEGACY_DIRS[@]}"}"; do
-    _agent_rules_prune_legacy_dir "$dir" || return 1
   done
   _agent_rules_consume_legacy_state || return 1
   _agent_rules_remove_state

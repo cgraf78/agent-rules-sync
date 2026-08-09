@@ -129,12 +129,6 @@ _agent_rules_legacy_cache_v3() {
   printf '%s/dot/agent-rules-publish-cache-v3\n' "$root"
 }
 
-_agent_rules_legacy_cache_v1() {
-  local root
-  root=$(_agent_rules_state_home) || return 1
-  printf '%s/dot/agent-rules-publish-cache-v1\n' "$root"
-}
-
 _agent_rules_builtin_target() {
   local agent="$1" home config
   case "$agent" in
@@ -165,7 +159,6 @@ _agent_rules_validate_runtime_paths() {
   agent_rules_default_manifest >/dev/null || return 1
   _agent_rules_state_file >/dev/null || return 1
   _agent_rules_legacy_cache_v3 >/dev/null || return 1
-  _agent_rules_legacy_cache_v1 >/dev/null || return 1
   _agent_rules_builtin_target claude >/dev/null || return 1
   _agent_rules_builtin_target codex >/dev/null || return 1
   _agent_rules_builtin_target gemini >/dev/null || return 1

@@ -83,14 +83,15 @@ even without state; an unrecorded custom path cannot and is left alone.
 ## Migration
 
 The retired implementation published `dot-managed:agent-rules` blocks and
-recorded target paths in two specific dot state files. Those are accepted only
-when their exact historical version is recognized. Successful publication,
-pruning, and new-state storage precede removal of the old inventories.
+recorded target paths in one versioned v3 dot state file. It is accepted only
+when its exact historical version is recognized. Successful publication,
+pruning, and new-state storage precede removal of that old inventory.
 
-An older publisher linked individual Markdown fragments from
-`$HOME/.config/agent-rules`. Directory cleanup is restricted to targets named
-by its exact old inventory, `*.md` symlinks, and resolved sources under that
-exact historical root. The source tree itself is never deleted.
+An even older publisher linked individual Markdown fragments and recorded
+directories in a v1 cache. That cache is no longer migration authority. In
+particular, `$HOME/.config/agent-rules` is an ordinary caller-owned source
+location; sync never scans or deletes links merely because they relate to that
+tree.
 
 ## Packaging
 

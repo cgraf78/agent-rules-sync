@@ -10,8 +10,8 @@ inventory:
   and failure-before-mutation behavior;
 - `managed-test` covers permissions, idempotent publication, durable state,
   target replacement, collision rejection, single-writer locking, dot-marker
-  and versioned-state takeover, conservative legacy link cleanup, malformed-
-  marker handling, and uninstall; and
+  and versioned-state takeover, retired v1 link-cache non-authority,
+  malformed-marker handling, and uninstall; and
 - `install-test` covers symlink installation, overrides, idempotence, and
   collision safety.
 

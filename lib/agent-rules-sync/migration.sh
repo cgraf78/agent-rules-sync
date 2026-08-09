@@ -3,14 +3,10 @@
 
 _AGENT_RULES_PREVIOUS_TARGETS=()
 declare -A _AGENT_RULES_PREVIOUS_TARGET_SEEN=()
-_AGENT_RULES_LEGACY_DIRS=()
-declare -A _AGENT_RULES_LEGACY_DIR_SEEN=()
 
 _agent_rules_previous_reset() {
   _AGENT_RULES_PREVIOUS_TARGETS=()
   _AGENT_RULES_PREVIOUS_TARGET_SEEN=()
-  _AGENT_RULES_LEGACY_DIRS=()
-  _AGENT_RULES_LEGACY_DIR_SEEN=()
 }
 
 _agent_rules_add_previous_target() {
@@ -19,14 +15,6 @@ _agent_rules_add_previous_target() {
   [[ -n "${_AGENT_RULES_PREVIOUS_TARGET_SEEN[$target]+x}" ]] && return 0
   _AGENT_RULES_PREVIOUS_TARGET_SEEN["$target"]=1
   _AGENT_RULES_PREVIOUS_TARGETS+=("$target")
-}
-
-_agent_rules_add_legacy_dir() {
-  local target="$1"
-  _agent_rules_require_absolute "stored legacy target path" "$target" || return 1
-  [[ -n "${_AGENT_RULES_LEGACY_DIR_SEEN[$target]+x}" ]] && return 0
-  _AGENT_RULES_LEGACY_DIR_SEEN["$target"]=1
-  _AGENT_RULES_LEGACY_DIRS+=("$target")
 }
 
 _agent_rules_load_state_file() {
@@ -59,24 +47,14 @@ _agent_rules_load_state_file() {
   }
 }
 
-_agent_rules_legacy_version_allowed() {
-  local generation="$1" version="$2"
-  case "$generation:$version" in
-    v3:dotfiles-agent-rules-cache-v3 | \
-      v1:dotfiles-agent-rules-cache-v2) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
 _agent_rules_load_legacy_cache() {
-  local file="$1" directories="$2" generation="$3"
+  local file="$1"
   local line key value _rest version_seen=0
   [[ -f "$file" ]] || return 0
   while IFS=$'\t' read -r key value _rest || [[ -n "$key$value$_rest" ]]; do
     case "$key" in
       version)
-        if ((version_seen)) ||
-          ! _agent_rules_legacy_version_allowed "$generation" "$value"; then
+        if ((version_seen)) || [[ "$value" != dotfiles-agent-rules-cache-v3 ]]; then
           _agent_rules_error \
             "unsupported legacy target inventory version: $value ($file)"
           return 1
@@ -85,11 +63,7 @@ _agent_rules_load_legacy_cache() {
         ;;
       target)
         [[ -n "$value" ]] || continue
-        if [[ "$directories" -eq 1 ]]; then
-          _agent_rules_add_legacy_dir "$value" || return 1
-        else
-          _agent_rules_add_previous_target "$value" || return 1
-        fi
+        _agent_rules_add_previous_target "$value" || return 1
         ;;
     esac
   done <"$file"
@@ -101,47 +75,16 @@ _agent_rules_load_legacy_cache() {
 }
 
 _agent_rules_load_previous() {
-  local state legacy_v3 legacy_v1
+  local state legacy_v3
   _agent_rules_previous_reset
   state=$(_agent_rules_state_file) || return 1
   legacy_v3=$(_agent_rules_legacy_cache_v3) || return 1
-  legacy_v1=$(_agent_rules_legacy_cache_v1) || return 1
   _agent_rules_load_state_file "$state" || return 1
-  _agent_rules_load_legacy_cache "$legacy_v3" 0 v3 || return 1
-  _agent_rules_load_legacy_cache "$legacy_v1" 1 v1 || return 1
-}
-
-_agent_rules_resolve_existing_link() {
-  local link="$1" target parent base
-  target=$(readlink "$link") || return 1
-  if [[ "$target" == /* ]]; then
-    parent=${target%/*}
-    base=${target##*/}
-  else
-    parent="${link%/*}/${target%/*}"
-    base=${target##*/}
-  fi
-  parent=$(cd -P -- "$parent" 2>/dev/null && pwd -P) || return 1
-  printf '%s/%s\n' "$parent" "$base"
-}
-
-_agent_rules_prune_legacy_dir() {
-  local dir="$1" file resolved home legacy_root
-  [[ -d "$dir" ]] || return 0
-  home=$(_agent_rules_home) || return 1
-  _agent_rules_canonical_candidate "$home/.config/agent-rules" || return 1
-  legacy_root="$REPLY"
-  for file in "$dir"/*.md; do
-    [[ -L "$file" ]] || continue
-    resolved=$(_agent_rules_resolve_existing_link "$file" 2>/dev/null || true)
-    case "$resolved" in
-      "$legacy_root/"*) rm -f -- "$file" || return 1 ;;
-    esac
-  done
+  _agent_rules_load_legacy_cache "$legacy_v3" || return 1
 }
 
 _agent_rules_prune_stale() {
-  local target dir status
+  local target status
   for target in "${_AGENT_RULES_PREVIOUS_TARGETS[@]+"${_AGENT_RULES_PREVIOUS_TARGETS[@]}"}"; do
     _agent_rules_target_path_selected "$target"
     status=$?
@@ -154,9 +97,6 @@ _agent_rules_prune_stale() {
         ;;
     esac
     _agent_rules_prune_target "$target" || return 1
-  done
-  for dir in "${_AGENT_RULES_LEGACY_DIRS[@]+"${_AGENT_RULES_LEGACY_DIRS[@]}"}"; do
-    _agent_rules_prune_legacy_dir "$dir" || return 1
   done
 }
 
@@ -177,10 +117,9 @@ _agent_rules_write_state() {
 }
 
 _agent_rules_consume_legacy_state() {
-  local legacy_v3 legacy_v1
+  local legacy_v3
   legacy_v3=$(_agent_rules_legacy_cache_v3) || return 1
-  legacy_v1=$(_agent_rules_legacy_cache_v1) || return 1
-  rm -f -- "$legacy_v3" "$legacy_v1"
+  rm -f -- "$legacy_v3"
 }
 
 _agent_rules_remove_state() {

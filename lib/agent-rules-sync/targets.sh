@@ -143,13 +143,12 @@ _agent_rules_reject_target_tree_collision() {
 }
 
 _agent_rules_validate_target_collisions() {
-  local target source state state_dir lock reclaim legacy_v3 legacy_v1
+  local target source state state_dir lock reclaim legacy_v3
   state=$(_agent_rules_state_file) || return 1
   state_dir=${state%/*}
   lock="$state_dir/lock"
   reclaim="$lock.reclaim"
   legacy_v3=$(_agent_rules_legacy_cache_v3) || return 1
-  legacy_v1=$(_agent_rules_legacy_cache_v1) || return 1
   for target in "${_AGENT_RULES_TARGET_PATHS[@]+"${_AGENT_RULES_TARGET_PATHS[@]}"}"; do
     _agent_rules_reject_target_tree_collision \
       "$target" "$lock" "provider lock state" || return 1
@@ -161,8 +160,6 @@ _agent_rules_validate_target_collisions() {
       "$target" "$state" "provider state" || return 1
     _agent_rules_reject_target_collision \
       "$target" "$legacy_v3" "legacy state" || return 1
-    _agent_rules_reject_target_collision \
-      "$target" "$legacy_v1" "legacy state" || return 1
     for source in "${_AGENT_RULES_RULE_FILES[@]+"${_AGENT_RULES_RULE_FILES[@]}"}"; do
       _agent_rules_reject_target_collision \
         "$target" "$source" "rule source" || return 1
