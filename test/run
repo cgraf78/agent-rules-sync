@@ -15,7 +15,7 @@ for suite in \
   "$suite" || status=1
 done
 
-if [[ "${AGENT_RULES_SKIP_SHELLCHECK:-0}" != 1 ]] &&
+if [[ "${AGENT_RULES_SYNC_SKIP_SHELLCHECK:-0}" != 1 ]] &&
   command -v shellcheck >/dev/null 2>&1; then
   shell_files=()
   while IFS=$'\t' read -r record_type path ||

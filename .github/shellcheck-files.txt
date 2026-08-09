@@ -1,15 +1,15 @@
 # type<TAB>repository-relative path
-program	bin/agent-rules
+program	bin/agent-rules-sync
 program	install.sh
-program	lib/agent-rules/api.sh
-program	lib/agent-rules/lock.sh
-program	lib/agent-rules/managed.sh
-program	lib/agent-rules/manifest.sh
-program	lib/agent-rules/migration.sh
-program	lib/agent-rules/paths.sh
-program	lib/agent-rules/render.sh
-program	lib/agent-rules/targets.sh
-program	lib/agent-rules/temp.sh
+program	lib/agent-rules-sync/api.sh
+program	lib/agent-rules-sync/lock.sh
+program	lib/agent-rules-sync/managed.sh
+program	lib/agent-rules-sync/manifest.sh
+program	lib/agent-rules-sync/migration.sh
+program	lib/agent-rules-sync/paths.sh
+program	lib/agent-rules-sync/render.sh
+program	lib/agent-rules-sync/targets.sh
+program	lib/agent-rules-sync/temp.sh
 program	test/cli-test
 program	test/install-test
 program	test/lib/test.sh

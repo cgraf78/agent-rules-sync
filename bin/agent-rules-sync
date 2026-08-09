@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Generate shared rule and playbook routing documents for supported agents.
+# Synchronize shared rule and playbook routing documents for supported agents.
 
 set -u
 
 if ((BASH_VERSINFO[0] < 4)); then
-  printf 'agent-rules: Bash 4.0 or newer is required (found %s)\n' \
+  printf 'agent-rules-sync: Bash 4.0 or newer is required (found %s)\n' \
     "$BASH_VERSION" >&2
   exit 1
 fi
@@ -32,28 +32,28 @@ _agent_rules_script_dir() {
 }
 
 _AGENT_RULES_BIN_DIR=$(_agent_rules_script_dir "${BASH_SOURCE[0]}") || {
-  printf 'agent-rules: cannot resolve the installation directory\n' >&2
+  printf 'agent-rules-sync: cannot resolve the installation directory\n' >&2
   exit 1
 }
-_AGENT_RULES_LIB_DIR=$(cd "$_AGENT_RULES_BIN_DIR/../lib/agent-rules" && pwd -P) || {
-  printf 'agent-rules: private library is not installed\n' >&2
+_AGENT_RULES_LIB_DIR=$(cd "$_AGENT_RULES_BIN_DIR/../lib/agent-rules-sync" && pwd -P) || {
+  printf 'agent-rules-sync: private library is not installed\n' >&2
   exit 1
 }
-# shellcheck source=../lib/agent-rules/api.sh
+# shellcheck source=../lib/agent-rules-sync/api.sh
 . "$_AGENT_RULES_LIB_DIR/api.sh"
 
 usage() {
   cat <<'EOF'
-Usage: agent-rules <command> [options]
+Usage: agent-rules-sync [--manifest FILE]
+       agent-rules-sync uninstall
 
-Commands:
-  sync [--manifest FILE]  Render and publish the selected rules.
-  uninstall               Remove only provider-owned generated blocks.
+With no command, render and publish the selected rules. `uninstall` removes
+only provider-owned generated blocks.
 
 Manifest selection:
   --manifest FILE
-  $AGENT_RULES_MANIFEST
-  $XDG_CONFIG_HOME/agent-rules/manifest.tsv
+  $AGENT_RULES_SYNC_MANIFEST
+  $XDG_CONFIG_HOME/agent-rules-sync/manifest.tsv
 
 Every explicit manifest path must be absolute. Relative XDG roots fall back to
 their HOME defaults.
@@ -70,12 +70,11 @@ main() {
       }
       usage
       ;;
-    sync)
-      shift
+    '' | --manifest)
       case "$#" in
         0)
-          if [[ -n "${AGENT_RULES_MANIFEST:-}" ]]; then
-            manifest="$AGENT_RULES_MANIFEST"
+          if [[ -n "${AGENT_RULES_SYNC_MANIFEST:-}" ]]; then
+            manifest="$AGENT_RULES_SYNC_MANIFEST"
           else
             manifest=$(agent_rules_default_manifest) || return 1
           fi

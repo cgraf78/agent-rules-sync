@@ -6,4 +6,4 @@
 
 ## On-demand playbooks
 
-<!-- agent-rules-playbook-index -->
+<!-- agent-rules-sync-playbook-index -->

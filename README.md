@@ -1,22 +1,22 @@
-# agent-rules
+# agent-rules-sync
 
-![Tests](https://github.com/cgraf78/agent-rules/actions/workflows/test.yml/badge.svg?branch=main)
+![Tests](https://github.com/cgraf78/agent-rules-sync/actions/workflows/test.yml/badge.svg?branch=main)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Bash](https://img.shields.io/badge/bash-%3E%3D4.0-blue.svg)](https://www.gnu.org/software/bash/)
 
-`agent-rules` generates one shared rule document for Claude, Codex, Gemini,
+`agent-rules-sync` synchronizes one shared rule document for Claude, Codex, Gemini,
 OpenCode, and explicitly configured file targets. Ordered Markdown fragments
 remain owned by the caller. A versioned manifest tells the provider exactly
 which rule and playbook files are trusted, which order they use, and where the
 result should be published.
 
 ```console
-agent-rules sync
-agent-rules sync --manifest /absolute/path/to/manifest.tsv
-agent-rules uninstall
+agent-rules-sync
+agent-rules-sync --manifest /absolute/path/to/manifest.tsv
+agent-rules-sync uninstall
 ```
 
-The deliberately narrow boundary makes `agent-rules` reusable with dotfiles,
+The deliberately narrow boundary makes `agent-rules-sync` reusable with dotfiles,
 another configuration manager, or a hand-authored manifest. It does not scan a
 home directory, select policy, evaluate shell from configuration, or contain
 the caller's actual rule and playbook prose.
@@ -26,18 +26,18 @@ the caller's actual rule and playbook prose.
 Clone the repository and install a PATH-visible symlink:
 
 ```bash
-git clone https://github.com/cgraf78/agent-rules.git
-cd agent-rules
+git clone https://github.com/cgraf78/agent-rules-sync.git
+cd agent-rules-sync
 ./install.sh
 ```
 
 `PREFIX` defaults to `$HOME/.local`; `BIN_DIR` can override its `bin` child.
 The symlink resolves back to the matching checkout, keeping the launcher and
 private shell library version-coupled. Dependency managers can instead expose
-`bin/agent-rules` directly. For example, a shdeps entry is:
+`bin/agent-rules-sync` directly. For example, a shdeps entry is:
 
 ```text
-cgraf78/agent-rules  github
+cgraf78/agent-rules-sync  github
 ```
 
 ## Manifest
@@ -45,11 +45,11 @@ cgraf78/agent-rules  github
 The default manifest is:
 
 ```text
-$XDG_CONFIG_HOME/agent-rules/manifest.tsv
+$XDG_CONFIG_HOME/agent-rules-sync/manifest.tsv
 ```
 
 When `XDG_CONFIG_HOME` is unset or relative, it falls back to
-`$HOME/.config`. `AGENT_RULES_MANIFEST` selects another absolute manifest;
+`$HOME/.config`. `AGENT_RULES_SYNC_MANIFEST` selects another absolute manifest;
 `--manifest` has the same purpose for one invocation and takes precedence.
 
 The file is a strict tab-separated record stream. Its first nonempty record is
@@ -57,7 +57,7 @@ the version, rule and playbook roots occur once, and remaining records retain
 their manifest order:
 
 ```text
-version<TAB>agent-rules-manifest-v1
+version<TAB>agent-rules-sync-manifest-v1
 rule-root<TAB>/absolute/policy/rules.d
 playbook-root<TAB>/absolute/policy/playbooks.d
 rule<TAB>/absolute/policy/rules.d/000-example.md
@@ -94,7 +94,7 @@ exactly one trigger in its leading title/metadata block:
 When at least one playbook is selected, exactly one rule fragment contains:
 
 ```markdown
-<!-- agent-rules-playbook-index -->
+<!-- agent-rules-sync-playbook-index -->
 ```
 
 The marker expands in place to ordered `trigger: route` entries. Playbook
@@ -135,9 +135,9 @@ private or future agent.
 Generated content is enclosed by:
 
 ```text
-# agent-rules:aggregate begin
+# agent-rules-sync:aggregate begin
 ...
-# agent-rules:aggregate end
+# agent-rules-sync:aggregate end
 ```
 
 Unmanaged text outside the block is preserved. Changed files are replaced
@@ -149,7 +149,7 @@ back to `0600`.
 The active target inventory is durable state at:
 
 ```text
-$XDG_STATE_HOME/agent-rules/targets-v1
+$XDG_STATE_HOME/agent-rules-sync/targets-v1
 ```
 
 It lets a later sync prune managed blocks from deselected custom targets and
@@ -159,7 +159,7 @@ identity, so moving a symlinked target parent does not strand the managed block
 at its old destination. The provider removes a destination file only when no
 unmanaged text remains.
 
-`sync` recognizes the exact historical `dot-managed:agent-rules` block family
+A sync recognizes the exact historical `dot-managed:agent-rules` block family
 and the retired dot target inventories below `$XDG_STATE_HOME/dot`. It can also
 retire fragment symlinks recorded by the old publisher, but only when their
 resolved source is below the exact historical `$HOME/.config/agent-rules`

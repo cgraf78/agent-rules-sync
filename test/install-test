@@ -11,21 +11,21 @@ work=$(_tmpdir)
 prefix="$work/prefix"
 
 PREFIX="$prefix" "$repo_root/install.sh" >"$work/install.out"
-target="$prefix/bin/agent-rules"
+target="$prefix/bin/agent-rules-sync"
 if [[ -L "$target" ]]; then
   _pass "installer: creates a command symlink"
 else
   _fail "installer: creates a command symlink"
 fi
 _assert_eq "installer: points at this checkout" \
-  "$repo_root/bin/agent-rules" "$(readlink "$target")"
+  "$repo_root/bin/agent-rules-sync" "$(readlink "$target")"
 
 PREFIX="$prefix" "$repo_root/install.sh" >"$work/reinstall.out"
 _assert_exit "installer: reinstall is idempotent" 0 "$?"
 
 custom_bin="$work/custom-bin"
 BIN_DIR="$custom_bin" "$repo_root/install.sh" >"$work/custom.out"
-if [[ -L "$custom_bin/agent-rules" ]]; then
+if [[ -L "$custom_bin/agent-rules-sync" ]]; then
   _pass "installer: honors BIN_DIR"
 else
   _fail "installer: honors BIN_DIR"
@@ -33,7 +33,7 @@ fi
 
 blocked="$work/blocked"
 mkdir -p "$blocked"
-printf 'owned elsewhere\n' >"$blocked/agent-rules"
+printf 'owned elsewhere\n' >"$blocked/agent-rules-sync"
 set +e
 BIN_DIR="$blocked" "$repo_root/install.sh" \
   >"$work/blocked.out" 2>"$work/blocked.err"
@@ -41,7 +41,7 @@ status=$?
 set -e
 _assert_exit "installer: refuses a non-symlink target" 1 "$status"
 _assert_file_content "installer: preserves a non-symlink target" \
-  "owned elsewhere" "$blocked/agent-rules"
+  "owned elsewhere" "$blocked/agent-rules-sync"
 _assert_contains "installer: refusal is actionable" \
   "refusing to replace non-symlink" "$(<"$work/blocked.err")"
 

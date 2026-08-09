@@ -21,5 +21,5 @@ real public executable and inspect real filesystem results. No suite reads or
 modifies the user's installed rule files, and no fixture contains personal or
 private policy prose.
 
-Set `AGENT_RULES_SKIP_SHELLCHECK=1` only when the surrounding CI job already
+Set `AGENT_RULES_SYNC_SKIP_SHELLCHECK=1` only when the surrounding CI job already
 runs the same typed inventory through its shared ShellCheck profile.

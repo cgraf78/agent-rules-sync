@@ -51,7 +51,7 @@ _agent_rules_acquire_lock() {
     return 0
   fi
   if [[ -L "$lock" || ! -d "$lock" ]]; then
-    _agent_rules_error "invalid agent-rules lock path: $lock"
+    _agent_rules_error "invalid agent-rules-sync lock path: $lock"
     return 1
   fi
 
@@ -60,7 +60,7 @@ _agent_rules_acquire_lock() {
   # replace the primary lock.
   reclaim="$lock.reclaim"
   if ! mkdir "$reclaim" 2>/dev/null; then
-    _agent_rules_error "another agent-rules invocation is acquiring the lock"
+    _agent_rules_error "another agent-rules-sync invocation is acquiring the lock"
     return 1
   fi
   _AGENT_RULES_RECLAIM_DIR="$reclaim"
@@ -76,7 +76,7 @@ _agent_rules_acquire_lock() {
   if [[ ! -e "$lock" && ! -L "$lock" ]]; then
     if ! _agent_rules_create_lock "$lock"; then
       _agent_rules_release_reclaim
-      _agent_rules_error "could not acquire agent-rules lock: $lock"
+      _agent_rules_error "could not acquire agent-rules-sync lock: $lock"
       return 1
     fi
     _agent_rules_release_reclaim
@@ -84,17 +84,17 @@ _agent_rules_acquire_lock() {
   fi
   if [[ -L "$lock" || ! -d "$lock" ]]; then
     _agent_rules_release_reclaim
-    _agent_rules_error "invalid agent-rules lock path: $lock"
+    _agent_rules_error "invalid agent-rules-sync lock path: $lock"
     return 1
   fi
   if _agent_rules_lock_owner_is_live "$lock"; then
     _agent_rules_release_reclaim
-    _agent_rules_error "another agent-rules invocation is active"
+    _agent_rules_error "another agent-rules-sync invocation is active"
     return 1
   fi
   if [[ -L "$lock/pid" ]]; then
     _agent_rules_release_reclaim
-    _agent_rules_error "invalid agent-rules lock owner file: $lock/pid"
+    _agent_rules_error "invalid agent-rules-sync lock owner file: $lock/pid"
     return 1
   fi
   rm -f "$lock/pid" || {
@@ -103,12 +103,12 @@ _agent_rules_acquire_lock() {
   }
   if ! rmdir "$lock" 2>/dev/null; then
     _agent_rules_release_reclaim
-    _agent_rules_error "refusing to reclaim nonempty agent-rules lock: $lock"
+    _agent_rules_error "refusing to reclaim nonempty agent-rules-sync lock: $lock"
     return 1
   fi
   if ! _agent_rules_create_lock "$lock"; then
     _agent_rules_release_reclaim
-    _agent_rules_error "could not acquire agent-rules lock: $lock"
+    _agent_rules_error "could not acquire agent-rules-sync lock: $lock"
     return 1
   fi
   _agent_rules_release_reclaim

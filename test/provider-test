@@ -8,7 +8,7 @@ repo_root=$(cd "${BASH_SOURCE[0]%/*}/.." && pwd -P) || exit 1
 # shellcheck source=lib/test.sh
 . "$repo_root/test/lib/test.sh"
 
-cli="$repo_root/bin/agent-rules"
+cli="$repo_root/bin/agent-rules-sync"
 work=$(_tmpdir)
 home="$work/home"
 config="$work/config"
@@ -16,7 +16,7 @@ state="$work/state"
 rules="$work/policy/rules.d"
 playbooks="$work/policy/playbooks.d"
 authorized="$work/authorized"
-manifest="$config/agent-rules/manifest.tsv"
+manifest="$config/agent-rules-sync/manifest.tsv"
 custom="$work/custom/AGENTS.md"
 mkdir -p "$home" "${manifest%/*}" "$rules" "$playbooks" "$authorized"
 
@@ -27,7 +27,7 @@ cat >"$rules/000-main.md" <<'EOF'
 
 main rule
 
-<!-- agent-rules-playbook-index -->
+<!-- agent-rules-sync-playbook-index -->
 EOF
 cat >"$rules/010-style.md" <<'EOF'
 # vim: set ft=markdown:
@@ -50,7 +50,7 @@ cat >"$authorized/first.md" <<'EOF'
 <!-- agent-rule-trigger: Run first, despite its name -->
 EOF
 cat >"$manifest" <<EOF
-version	agent-rules-manifest-v1
+version	agent-rules-sync-manifest-v1
 rule-root	$rules
 playbook-root	$playbooks
 rule	$rules/000-main.md
@@ -65,7 +65,7 @@ target-file	$custom
 EOF
 
 HOME="$home" XDG_CONFIG_HOME="$config" XDG_STATE_HOME="$state" \
-  "$cli" sync --manifest "$manifest" >"$work/sync.out" 2>"$work/sync.err"
+  "$cli" --manifest "$manifest" >"$work/sync.out" 2>"$work/sync.err"
 status=$?
 _assert_exit "sync: accepts a complete versioned manifest" 0 "$status"
 
@@ -79,8 +79,16 @@ for target in \
 done
 
 generated=$(<"$home/.claude/CLAUDE.md")
+for target in \
+  "$home/.codex/AGENTS.md" \
+  "$home/.gemini/GEMINI.md" \
+  "$config/opencode/AGENTS.md" \
+  "$custom"; do
+  _assert_file_content "targets: shares one rendered artifact with $target" \
+    "$generated" "$target"
+done
 _assert_contains "render: uses provider marker" \
-  "# agent-rules:aggregate begin" "$generated"
+  "# agent-rules-sync:aggregate begin" "$generated"
 _assert_contains "render: identifies the selecting manifest" \
   "# manifest: $manifest" "$generated"
 _assert_contains "render: keeps first rule prose" "main rule" "$generated"
@@ -132,7 +140,7 @@ first grouped rule
 
 second grouped rule
 
-<!-- agent-rules-playbook-index -->
+<!-- agent-rules-sync-playbook-index -->
 EOF
 cat >"$multi_playbook" <<'EOF'
 # Grouped playbook
@@ -142,7 +150,7 @@ cat >"$multi_playbook" <<'EOF'
 <!-- agent-rule-trigger: Exercising grouped playbook IDs -->
 EOF
 cat >"$multi_manifest" <<EOF
-version	agent-rules-manifest-v1
+version	agent-rules-sync-manifest-v1
 rule-root	$multi_work
 playbook-root	$multi_playbooks
 rule	$multi_rule
@@ -150,7 +158,7 @@ playbook	grouped.md	$multi_playbook
 target-file	$multi_target
 EOF
 HOME="$multi_home" XDG_STATE_HOME="$multi_state" \
-  "$cli" sync --manifest "$multi_manifest" \
+  "$cli" --manifest "$multi_manifest" \
   >"$multi_work/sync.out" 2>"$multi_work/sync.err"
 _assert_exit "rule ids: accepts multiple distinct IDs in one fragment" 0 "$?"
 _assert_contains "rule ids: publishes the first grouped ID" \
@@ -163,11 +171,11 @@ _assert_contains "playbook ids: accepts multiple IDs with one trigger" \
 
 # The retired dot marker remains a supported source placeholder during the
 # migration, but it has the same exactly-once contract as the provider marker.
-sed 's/agent-rules-playbook-index/dot-playbook-index/' \
+sed 's/agent-rules-sync-playbook-index/dot-playbook-index/' \
   "$rules/000-main.md" >"$rules/000-main.tmp"
 mv "$rules/000-main.tmp" "$rules/000-main.md"
 HOME="$home" XDG_CONFIG_HOME="$config" XDG_STATE_HOME="$state" \
-  "$cli" sync --manifest "$manifest" >/dev/null 2>"$work/legacy-index.err"
+  "$cli" --manifest "$manifest" >/dev/null 2>"$work/legacy-index.err"
 _assert_exit "playbooks: accepts the legacy dot index placeholder" 0 "$?"
 
 # `installed` expands only public built-ins. Isolate PATH so the fixture's
@@ -187,7 +195,7 @@ EOF
   chmod +x "$installed_bin/$command"
 done
 cat >"$installed_manifest" <<EOF
-version	agent-rules-manifest-v1
+version	agent-rules-sync-manifest-v1
 rule-root	$rules
 playbook-root	$playbooks
 rule	$rules/000-main.md
@@ -198,7 +206,7 @@ EOF
 test_path="$installed_bin:${BASH%/*}:/usr/bin:/bin"
 HOME="$installed_home" XDG_CONFIG_HOME="$installed_config" \
   XDG_STATE_HOME="$installed_state" PATH="$test_path" \
-  "$cli" sync --manifest "$installed_manifest" >/dev/null 2>"$installed_work/sync.err"
+  "$cli" --manifest "$installed_manifest" >/dev/null 2>"$installed_work/sync.err"
 _assert_exit "installed targets: sync succeeds" 0 "$?"
 _assert_file_exists "installed targets: discovers Codex" \
   "$installed_home/.codex/AGENTS.md"
@@ -219,7 +227,7 @@ _invalid_manifest() {
   printf '%s\n' "$@" >"$invalid"
   set +e
   HOME="$home" XDG_CONFIG_HOME="$config" XDG_STATE_HOME="$state" \
-    "$cli" sync --manifest "$invalid" >"$work/invalid.out" 2>"$work/invalid.err"
+    "$cli" --manifest "$invalid" >"$work/invalid.out" 2>"$work/invalid.err"
   local rc=$?
   set -e
   _assert_exit "$desc: is rejected" 1 "$rc"
@@ -230,33 +238,33 @@ _invalid_manifest() {
 }
 
 _invalid_manifest "manifest version" "unsupported version" \
-  $'version\tagent-rules-manifest-v2' \
+  $'version\tagent-rules-sync-manifest-v2' \
   $'rule-root\t'"$rules" \
   $'playbook-root\t'"$playbooks" \
   $'rule\t'"$rules/000-main.md" \
   $'target\tclaude'
 
 _invalid_manifest "relative rule source" "absolute" \
-  $'version\tagent-rules-manifest-v1' \
+  $'version\tagent-rules-sync-manifest-v1' \
   $'rule-root\t'"$rules" \
   $'playbook-root\t'"$playbooks" \
   $'rule\trelative.md' \
   $'target\tclaude'
 
 _invalid_manifest "control character in root" "control character" \
-  $'version\tagent-rules-manifest-v1' \
+  $'version\tagent-rules-sync-manifest-v1' \
   $'rule-root\t'"$rules"$'\r' \
   $'playbook-root\t'"$playbooks" \
   $'rule\t'"$rules/010-style.md" \
   $'target\tclaude'
 
 _invalid_manifest "extra version field" "fields" \
-  $'version\tagent-rules-manifest-v1\textra' \
+  $'version\tagent-rules-sync-manifest-v1\textra' \
   $'rule-root\t'"$rules" \
   $'playbook-root\t'"$playbooks"
 
 _invalid_manifest "unsafe playbook route" "unsafe playbook route" \
-  $'version\tagent-rules-manifest-v1' \
+  $'version\tagent-rules-sync-manifest-v1' \
   $'rule-root\t'"$rules" \
   $'playbook-root\t'"$playbooks" \
   $'rule\t'"$rules/000-main.md" \
@@ -264,21 +272,21 @@ _invalid_manifest "unsafe playbook route" "unsafe playbook route" \
   $'target\tclaude'
 
 _invalid_manifest "unknown target" "unsupported target" \
-  $'version\tagent-rules-manifest-v1' \
+  $'version\tagent-rules-sync-manifest-v1' \
   $'rule-root\t'"$rules" \
   $'playbook-root\t'"$playbooks" \
   $'rule\t'"$rules/000-main.md" \
   $'target\tfuture-agent'
 
 _invalid_manifest "relative custom target" "target-file path must be absolute" \
-  $'version\tagent-rules-manifest-v1' \
+  $'version\tagent-rules-sync-manifest-v1' \
   $'rule-root\t'"$rules" \
   $'playbook-root\t'"$playbooks" \
   $'rule\t'"$rules/000-main.md" \
   $'target-file\trelative/AGENTS.md'
 
 _invalid_manifest "duplicate rule record" "duplicate rule" \
-  $'version\tagent-rules-manifest-v1' \
+  $'version\tagent-rules-sync-manifest-v1' \
   $'rule-root\t'"$rules" \
   $'playbook-root\t'"$playbooks" \
   $'rule\t'"$rules/000-main.md" \
@@ -292,7 +300,7 @@ cat >"$duplicate_id" <<'EOF'
 <!-- agent-rule-id: example-style -->
 EOF
 _invalid_manifest "duplicate rule id" "duplicate agent-rule-id" \
-  $'version\tagent-rules-manifest-v1' \
+  $'version\tagent-rules-sync-manifest-v1' \
   $'rule-root\t'"$rules" \
   $'playbook-root\t'"$playbooks" \
   $'rule\t'"$rules/010-style.md" \
@@ -302,7 +310,7 @@ _invalid_manifest "duplicate rule id" "duplicate agent-rule-id" \
 no_id="$rules/030-no-id.md"
 printf '%s\n' '# No identifier' >"$no_id"
 _invalid_manifest "missing rule id" "at least one agent-rule-id" \
-  $'version\tagent-rules-manifest-v1' \
+  $'version\tagent-rules-sync-manifest-v1' \
   $'rule-root\t'"$rules" \
   $'playbook-root\t'"$playbooks" \
   $'rule\t'"$no_id" \
@@ -314,10 +322,10 @@ cat >"$reserved_marker" <<'EOF'
 
 <!-- agent-rule-id: example-reserved-marker -->
 
-# agent-rules:aggregate begin
+# agent-rules-sync:aggregate begin
 EOF
 _invalid_manifest "reserved managed marker" "reserved managed marker" \
-  $'version\tagent-rules-manifest-v1' \
+  $'version\tagent-rules-sync-manifest-v1' \
   $'rule-root\t'"$rules" \
   $'playbook-root\t'"$playbooks" \
   $'rule\t'"$reserved_marker" \
@@ -330,7 +338,7 @@ cat >"$missing_trigger" <<'EOF'
 <!-- agent-rule-id: example-missing-trigger -->
 EOF
 _invalid_manifest "missing playbook trigger" "exactly one agent-rule-trigger" \
-  $'version\tagent-rules-manifest-v1' \
+  $'version\tagent-rules-sync-manifest-v1' \
   $'rule-root\t'"$rules" \
   $'playbook-root\t'"$playbooks" \
   $'rule\t'"$rules/000-main.md" \
@@ -343,10 +351,10 @@ cat >"$duplicate_index" <<'EOF'
 
 <!-- agent-rule-id: example-duplicate-index -->
 
-<!-- agent-rules-playbook-index -->
+<!-- agent-rules-sync-playbook-index -->
 EOF
 _invalid_manifest "duplicate playbook index" "exactly one playbook index" \
-  $'version\tagent-rules-manifest-v1' \
+  $'version\tagent-rules-sync-manifest-v1' \
   $'rule-root\t'"$rules" \
   $'playbook-root\t'"$playbooks" \
   $'rule\t'"$rules/000-main.md" \

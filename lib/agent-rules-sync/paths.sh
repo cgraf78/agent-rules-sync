@@ -2,7 +2,7 @@
 # Stable XDG and agent target paths.
 
 _agent_rules_error() {
-  printf 'agent-rules: %s\n' "$*" >&2
+  printf 'agent-rules-sync: %s\n' "$*" >&2
 }
 
 _agent_rules_value_has_control() {
@@ -114,13 +114,13 @@ _agent_rules_state_home() {
 agent_rules_default_manifest() {
   local root
   root=$(_agent_rules_config_home) || return 1
-  printf '%s/agent-rules/manifest.tsv\n' "$root"
+  printf '%s/agent-rules-sync/manifest.tsv\n' "$root"
 }
 
 _agent_rules_state_file() {
   local root
   root=$(_agent_rules_state_home) || return 1
-  printf '%s/agent-rules/targets-v1\n' "$root"
+  printf '%s/agent-rules-sync/targets-v1\n' "$root"
 }
 
 _agent_rules_legacy_cache_v3() {

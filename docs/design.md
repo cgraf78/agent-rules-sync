@@ -2,7 +2,7 @@
 
 ## Boundary
 
-agent-rules owns behavior that is reusable across policy repositories and
+agent-rules-sync owns behavior that is reusable across policy repositories and
 configuration managers:
 
 - strict versioned-manifest parsing and source-metadata validation;
@@ -25,14 +25,14 @@ Consumers own all policy:
 This is why the provider accepts a resolved manifest instead of scanning a
 conventional source directory. Discovery would move trust policy into a public
 utility and either weaken a configuration manager's overlay checks or couple
-the utility to one repository layout.
+the sync utility to one repository layout.
 
 ## Route and source are separate
 
 A playbook route is the stable path agents see in their generated routing
 index. Its source is the absolute file already authorized by the orchestrator.
 Keeping them separate supports an overlay-owned source without exposing that
-overlay's path as the runtime route, and it avoids asking agent-rules to infer
+overlay's path as the runtime route, and it avoids asking agent-rules-sync to infer
 whether a symlink, checkout, or local filesystem source is trustworthy.
 
 The manifest order is final. The provider does not sort fragments or routes,

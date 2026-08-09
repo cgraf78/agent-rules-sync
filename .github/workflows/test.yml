@@ -24,7 +24,7 @@ jobs:
       matrix-set: full
       profiles: base
       shellcheck-inventory-path: .github/shellcheck-files.txt
-      test-command: AGENT_RULES_SKIP_SHELLCHECK=1 test/run
+      test-command: AGENT_RULES_SYNC_SKIP_SHELLCHECK=1 test/run
 
   actions-sync:
     name: cgraf78/actions sync

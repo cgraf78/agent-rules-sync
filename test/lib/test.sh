@@ -105,14 +105,14 @@ _assert_mode() {
 }
 
 _AGENT_RULES_TEST_ROOT=$(mktemp -d \
-  "${TMPDIR:-/tmp}/agent-rules-test.XXXXXXXX") || {
-  printf 'agent-rules test: could not create temporary root\n' >&2
+  "${TMPDIR:-/tmp}/agent-rules-sync-test.XXXXXXXX") || {
+  printf 'agent-rules-sync test: could not create temporary root\n' >&2
   exit 1
 }
 case "$_AGENT_RULES_TEST_ROOT" in
-  "${TMPDIR:-/tmp}"/agent-rules-test.*) ;;
+  "${TMPDIR:-/tmp}"/agent-rules-sync-test.*) ;;
   *)
-    printf 'agent-rules test: unsafe temporary root: %s\n' \
+    printf 'agent-rules-sync test: unsafe temporary root: %s\n' \
       "$_AGENT_RULES_TEST_ROOT" >&2
     exit 1
     ;;
@@ -133,7 +133,7 @@ _tmpdir() {
   case "$path" in
     "$_AGENT_RULES_TEST_ROOT"/*) ;;
     *)
-      printf 'agent-rules test: unsafe suite directory: %s\n' "$path" >&2
+      printf 'agent-rules-sync test: unsafe suite directory: %s\n' "$path" >&2
       return 1
       ;;
   esac

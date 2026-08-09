@@ -8,11 +8,11 @@ repo_root=$(cd "${BASH_SOURCE[0]%/*}/.." && pwd -P) || exit 1
 # shellcheck source=lib/test.sh
 . "$repo_root/test/lib/test.sh"
 
-cli="$repo_root/bin/agent-rules"
+cli="$repo_root/bin/agent-rules-sync"
 
 help_output=$($cli --help 2>&1)
 _assert_exit "help: succeeds" 0 "$?"
-_assert_contains "help: documents sync" "sync" "$help_output"
+_assert_contains "help: names the sync executable" "agent-rules-sync" "$help_output"
 _assert_contains "help: documents uninstall" "uninstall" "$help_output"
 _assert_contains "help: documents manifest selection" "--manifest" "$help_output"
 
@@ -36,12 +36,12 @@ set +e
 HOME="$home" "$cli" >"$work/no-args.out" 2>"$work/no-args.err"
 status=$?
 set -e
-_assert_exit "validation: missing command is rejected" 2 "$status"
-_assert_path_missing "validation: missing command creates no state" \
-  "$home/.local/state/agent-rules"
+_assert_exit "default sync: missing manifest is rejected" 1 "$status"
+_assert_path_missing "default sync: missing manifest creates no state" \
+  "$home/.local/state/agent-rules-sync"
 
 set +e
-HOME="$home" "$cli" sync --manifest relative.tsv \
+HOME="$home" "$cli" --manifest relative.tsv \
   >"$work/relative.out" 2>"$work/relative.err"
 status=$?
 set -e
@@ -58,15 +58,15 @@ _assert_exit "validation: uninstall rejects extra arguments" 2 "$status"
 
 # Relative XDG roots fall back to HOME rather than depending on cwd.
 path_output=$(HOME="$home" XDG_CONFIG_HOME=relative/config bash -c '
-  . "$1/lib/agent-rules/paths.sh"
+  . "$1/lib/agent-rules-sync/paths.sh"
   agent_rules_default_manifest
 ' _ "$repo_root")
 _assert_eq "XDG config: relative root falls back to HOME" \
-  "$home/.config/agent-rules/manifest.tsv" "$path_output"
+  "$home/.config/agent-rules-sync/manifest.tsv" "$path_output"
 
 set +e
 HOME="$home" XDG_CONFIG_HOME="$work/"$'config\nbad' bash -c '
-  . "$1/lib/agent-rules/paths.sh"
+  . "$1/lib/agent-rules-sync/paths.sh"
   agent_rules_default_manifest
 ' _ "$repo_root" >"$work/control-xdg.out" 2>"$work/control-xdg.err"
 status=$?
@@ -79,7 +79,7 @@ _assert_contains "XDG config: control-root error is actionable" \
 set +e
 # shellcheck disable=SC2016  # Positional parameters expand in the child shell.
 env -u HOME -u XDG_CONFIG_HOME bash -c '
-  . "$1/lib/agent-rules/paths.sh"
+  . "$1/lib/agent-rules-sync/paths.sh"
   agent_rules_default_manifest
 ' _ "$repo_root" >"$work/no-home.out" 2>"$work/no-home.err"
 status=$?
@@ -95,29 +95,29 @@ config="$work/config"
 state="$work/state"
 rules="$work/rules"
 playbooks="$work/playbooks"
-mkdir -p "$config/agent-rules" "$rules" "$playbooks"
+mkdir -p "$config/agent-rules-sync" "$rules" "$playbooks"
 cat >"$rules/main.md" <<'EOF'
 # Main
 <!-- agent-rule-id: cli-main -->
 EOF
-cat >"$config/agent-rules/manifest.tsv" <<EOF
-version	agent-rules-manifest-v1
+cat >"$config/agent-rules-sync/manifest.tsv" <<EOF
+version	agent-rules-sync-manifest-v1
 rule-root	$rules
 playbook-root	$playbooks
 rule	$rules/main.md
 target	claude
 EOF
 HOME="$home" XDG_CONFIG_HOME="$config" XDG_STATE_HOME="$state" \
-  "$cli" sync >"$work/default.out" 2>"$work/default.err"
+  "$cli" >"$work/default.out" 2>"$work/default.err"
 _assert_exit "manifest selection: XDG default succeeds" 0 "$?"
 _assert_file_exists "manifest selection: XDG default publishes" \
   "$home/.claude/CLAUDE.md"
 
 control_manifest="$work/"$'control\nmanifest.tsv'
-cp "$config/agent-rules/manifest.tsv" "$control_manifest"
+cp "$config/agent-rules-sync/manifest.tsv" "$control_manifest"
 set +e
 HOME="$home" XDG_CONFIG_HOME="$config" XDG_STATE_HOME="$state" \
-  "$cli" sync --manifest "$control_manifest" \
+  "$cli" --manifest "$control_manifest" \
   >"$work/control.out" 2>"$work/control.err"
 status=$?
 set -e
@@ -128,14 +128,14 @@ _assert_contains "path validation: control-path error is actionable" \
 
 override="$work/override.tsv"
 cat >"$override" <<EOF
-version	agent-rules-manifest-v1
+version	agent-rules-sync-manifest-v1
 rule-root	$rules
 playbook-root	$playbooks
 rule	$rules/main.md
 target	codex
 EOF
 HOME="$home" XDG_CONFIG_HOME="$config" XDG_STATE_HOME="$state" \
-  AGENT_RULES_MANIFEST="$override" "$cli" sync \
+  AGENT_RULES_SYNC_MANIFEST="$override" "$cli" \
   >"$work/override.out" 2>"$work/override.err"
 _assert_exit "manifest selection: environment override succeeds" 0 "$?"
 _assert_file_exists "manifest selection: environment override is used" \
@@ -146,7 +146,7 @@ _assert_file_exists "manifest selection: environment override is used" \
 signal_path_file="$work/signal-path"
 set +e
 bash -c '
-  . "$1/lib/agent-rules/temp.sh"
+  . "$1/lib/agent-rules-sync/temp.sh"
   _agent_rules_install_temp_traps
   _agent_rules_sibling_tmp_for "$2/probe"
   printf "%s\n" "$REPLY" >"$3"
@@ -164,7 +164,7 @@ outside="$work/outside-owned-elsewhere"
 printf 'preserve me\n' >"$outside"
 set +e
 bash -c '
-  . "$1/lib/agent-rules/temp.sh"
+  . "$1/lib/agent-rules-sync/temp.sh"
   mktemp() { printf "%s\n" "$3"; }
   _agent_rules_install_temp_traps
   if _agent_rules_sibling_tmp_for "$2/probe"; then

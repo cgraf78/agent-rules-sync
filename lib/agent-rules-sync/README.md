@@ -1,6 +1,6 @@
 # Provider library
 
-These modules are private implementation details behind `bin/agent-rules`:
+These modules are private implementation details behind `bin/agent-rules-sync`:
 
 - `paths.sh` owns HOME, XDG, state, and built-in agent paths;
 - `temp.sh` owns same-directory scratch files and signal cleanup;

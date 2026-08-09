@@ -40,7 +40,7 @@ _agent_rules_load_state_file() {
     value="$REPLY_FIRST"
     case "$key" in
       version)
-        [[ "$value" == agent-rules-targets-v1 && "$version_seen" -eq 0 ]] || {
+        [[ "$value" == agent-rules-sync-targets-v1 && "$version_seen" -eq 0 ]] || {
           _agent_rules_error "invalid target inventory version: $value"
           return 1
         }
@@ -126,14 +126,16 @@ _agent_rules_resolve_existing_link() {
 }
 
 _agent_rules_prune_legacy_dir() {
-  local dir="$1" file resolved home
+  local dir="$1" file resolved home legacy_root
   [[ -d "$dir" ]] || return 0
   home=$(_agent_rules_home) || return 1
+  _agent_rules_canonical_candidate "$home/.config/agent-rules" || return 1
+  legacy_root="$REPLY"
   for file in "$dir"/*.md; do
     [[ -L "$file" ]] || continue
     resolved=$(_agent_rules_resolve_existing_link "$file" 2>/dev/null || true)
     case "$resolved" in
-      "$home/.config/agent-rules/"*) rm -f -- "$file" || return 1 ;;
+      "$legacy_root/"*) rm -f -- "$file" || return 1 ;;
     esac
   done
 }
@@ -164,7 +166,7 @@ _agent_rules_write_state() {
   _agent_rules_sibling_tmp_for "$state" || return 1
   tmp="$REPLY"
   {
-    printf 'version\tagent-rules-targets-v1\n'
+    printf 'version\tagent-rules-sync-targets-v1\n'
     for target in "${_AGENT_RULES_TARGET_PATHS[@]+"${_AGENT_RULES_TARGET_PATHS[@]}"}"; do
       printf 'target\t%s\n' "$target"
     done

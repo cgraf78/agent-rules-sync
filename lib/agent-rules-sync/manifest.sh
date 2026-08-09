@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # Parse the orchestrator-selected, versioned TSV manifest without evaluation.
 
-_AGENT_RULES_MANIFEST_VERSION=agent-rules-manifest-v1
+_AGENT_RULES_MANIFEST_VERSION=agent-rules-sync-manifest-v1
 _AGENT_RULES_MANIFEST_FILE=''
 _AGENT_RULES_RULE_ROOT=''
 _AGENT_RULES_PLAYBOOK_ROOT=''
@@ -166,7 +166,7 @@ _agent_rules_validate_rule_content() {
   local source="$1" content="$2" line
   while IFS= read -r line || [[ -n "$line" ]]; do
     case "$line" in
-      '# agent-rules:aggregate begin' | '# agent-rules:aggregate end' | \
+      '# agent-rules-sync:aggregate begin' | '# agent-rules-sync:aggregate end' | \
         '# dot-managed:agent-rules:'*' begin' | \
         '# dot-managed:agent-rules:'*' end')
         _agent_rules_error \
@@ -251,7 +251,7 @@ _agent_rules_count_playbook_markers() {
   for content in "${_AGENT_RULES_RULE_CONTENTS[@]+"${_AGENT_RULES_RULE_CONTENTS[@]}"}"; do
     while IFS= read -r line || [[ -n "$line" ]]; do
       case "$line" in
-        '<!-- agent-rules-playbook-index -->' | '<!-- dot-playbook-index -->')
+        '<!-- agent-rules-sync-playbook-index -->' | '<!-- dot-playbook-index -->')
           count=$((count + 1))
           ;;
       esac
