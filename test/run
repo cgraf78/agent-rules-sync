@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Run each standalone behavior suite from the repository root.
+
+set -u
+
+repo_root=$(cd "${BASH_SOURCE[0]%/*}/.." && pwd -P) || exit 1
+status=0
+
+for suite in \
+  "$repo_root/test/cli-test" \
+  "$repo_root/test/provider-test" \
+  "$repo_root/test/managed-test" \
+  "$repo_root/test/install-test"; do
+  printf '=== %s ===\n' "${suite##*/}"
+  "$suite" || status=1
+done
+
+if [[ "${AGENT_RULES_SKIP_SHELLCHECK:-0}" != 1 ]] &&
+  command -v shellcheck >/dev/null 2>&1; then
+  shell_files=()
+  while IFS=$'\t' read -r record_type path ||
+    [[ -n "$record_type$path" ]]; do
+    [[ "$record_type" == program ]] || continue
+    shell_files+=("$repo_root/$path")
+  done <"$repo_root/.github/shellcheck-files.txt"
+
+  if ((${#shell_files[@]} == 0)); then
+    printf 'test/run: ShellCheck inventory has no programs\n' >&2
+    status=1
+  else
+    (
+      cd "$repo_root" || exit 1
+      shellcheck -x -P SCRIPTDIR "${shell_files[@]}"
+    ) || status=1
+  fi
+fi
+
+exit "$status"

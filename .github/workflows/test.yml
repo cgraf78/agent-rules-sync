@@ -1,0 +1,42 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    # main is the only maintained branch. Keep this trigger aligned with the
+    # default branch so retired aliases cannot hide CI drift.
+    branches: [main]
+  schedule:
+    # Stagger sibling repositories so scheduled full matrices do not compete
+    # for the same runner capacity at the top of the hour.
+    - cron: "43 9 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  shell:
+    # The full shared matrix exercises the same Bash implementation and common
+    # Unix tools on Linux, macOS, and Termux.
+    uses: cgraf78/actions/.github/workflows/shell-ci.yml@0c8c5f1c615fd61b48cc7d5de5225ca491665d80
+    with:
+      matrix-set: full
+      profiles: base
+      shellcheck-inventory-path: .github/shellcheck-files.txt
+      test-command: AGENT_RULES_SKIP_SHELLCHECK=1 test/run
+
+  actions-sync:
+    name: cgraf78/actions sync
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # GitHub resolves literal `uses:` refs before a job can read repository
+      # files, so the lock cannot be interpolated. This gate verifies every
+      # unavoidable reusable-workflow ref matches the reviewed dependency pin.
+      - uses: cgraf78/actions/.github/actions/verify-consumer-sync@0c8c5f1c615fd61b48cc7d5de5225ca491665d80

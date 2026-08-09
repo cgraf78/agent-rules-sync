@@ -1,0 +1,18 @@
+# type<TAB>repository-relative path
+program	bin/agent-rules
+program	install.sh
+program	lib/agent-rules/api.sh
+program	lib/agent-rules/lock.sh
+program	lib/agent-rules/managed.sh
+program	lib/agent-rules/manifest.sh
+program	lib/agent-rules/migration.sh
+program	lib/agent-rules/paths.sh
+program	lib/agent-rules/render.sh
+program	lib/agent-rules/targets.sh
+program	lib/agent-rules/temp.sh
+program	test/cli-test
+program	test/install-test
+program	test/lib/test.sh
+program	test/managed-test
+program	test/provider-test
+program	test/run
