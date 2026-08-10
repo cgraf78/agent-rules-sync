@@ -141,6 +141,33 @@ _assert_exit "manifest selection: environment override succeeds" 0 "$?"
 _assert_file_exists "manifest selection: environment override is used" \
   "$home/.codex/AGENTS.md"
 
+# Examples are part of the public consumer contract, not parallel prose. Feed
+# the checked-in rule and playbook through the real generator so a schema or
+# routing change cannot leave copyable examples behind.
+example_home="$work/example-home"
+example_state="$work/example-state"
+example_manifest="$work/example-manifest.tsv"
+example_rules="$repo_root/examples/rules.d"
+example_playbooks="$repo_root/examples/playbooks.d"
+mkdir -p "$example_home"
+cat >"$example_manifest" <<EOF
+version	agent-rules-sync-manifest-v1
+rule-root	$example_rules
+playbook-root	$example_playbooks
+rule	$example_rules/000-example.md
+playbook	example/workflow.md	$example_playbooks/example/workflow.md
+target	claude
+EOF
+HOME="$example_home" XDG_STATE_HOME="$example_state" \
+  "$cli" --manifest "$example_manifest" \
+  >"$work/example.out" 2>"$work/example.err"
+_assert_exit "examples: checked-in manifest inputs generate successfully" 0 "$?"
+example_target=$(<"$example_home/.claude/CLAUDE.md")
+_assert_contains "examples: generated target includes the example rule" \
+  "example-global-rule" "$example_target"
+_assert_contains "examples: generated target routes the example playbook" \
+  "example/workflow.md" "$example_target"
+
 # Scratch ownership is invocation-scoped and signal cleanup preserves the
 # conventional terminal status.
 signal_path_file="$work/signal-path"
