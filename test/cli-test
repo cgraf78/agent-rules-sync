@@ -76,6 +76,83 @@ _assert_exit "XDG config: absolute root with a control character is rejected" \
 _assert_contains "XDG config: control-root error is actionable" \
   "control character" "$(<"$work/control-xdg.err")"
 
+# Path validation runs for every manifest input and output. Keep its character
+# policy broad, including locale-aware Unicode controls, but prove the hot path
+# does not outsource each check to a new process.
+# shellcheck source=../lib/agent-rules-sync/paths.sh
+. "$repo_root/lib/agent-rules-sync/paths.sh"
+path_probe_bin="$work/path-probe-bin"
+path_probe_log="$work/path-probe-grep.log"
+path_probe_grep=$(command -v grep)
+mkdir -p "$path_probe_bin"
+cat >"$path_probe_bin/grep" <<'EOF'
+#!/usr/bin/env bash
+printf 'grep\n' >>"$PATH_PROBE_LOG"
+exec "$PATH_PROBE_GREP" "$@"
+EOF
+chmod +x "$path_probe_bin/grep"
+export PATH_PROBE_LOG="$path_probe_log"
+export PATH_PROBE_GREP="$path_probe_grep"
+
+path_validation_status=0
+for path_control_code in {1..31} 127; do
+  printf -v path_control_octal '%03o' "$path_control_code"
+  printf -v path_control_byte '%b' "\\0$path_control_octal"
+  if ! PATH="$path_probe_bin:$PATH" \
+    _agent_rules_value_has_control "$path_control_byte"; then
+    printf '    control-policy mismatch: byte=%d expected=1 actual=0 locale=%q\n' \
+      "$path_control_code" "${LC_ALL-${LC_CTYPE-${LANG-}}}" >&2
+    path_validation_status=1
+  fi
+done
+for path_control_text in \
+  $'unicode-\302\205-control' \
+  $'unicode-\302\237-control' \
+  $'invalid-prefix-\377\302\205-control' \
+  $'unicode-\302\237\377-invalid-suffix'; do
+  # Unicode character classes vary by the active locale. Match the existing
+  # grep contract in UTF-8 locales without imposing that policy on C locales.
+  path_control_expected=0
+  path_control_actual=0
+  if printf '%s' "$path_control_text" |
+    "$path_probe_grep" -q '[[:cntrl:]]'; then
+    path_control_expected=1
+  fi
+  if PATH="$path_probe_bin:$PATH" \
+    _agent_rules_value_has_control "$path_control_text"; then
+    path_control_actual=1
+  fi
+  if [[ "$path_control_expected" -ne "$path_control_actual" ]]; then
+    printf '    control-policy mismatch: value=%q expected=%d actual=%d locale=%q\n' \
+      "$path_control_text" "$path_control_expected" "$path_control_actual" \
+      "${LC_ALL-${LC_CTYPE-${LANG-}}}" >&2
+    path_validation_status=1
+  fi
+done
+for path_plain_text in \
+  'ordinary path with spaces' \
+  $'Unicode letter \u00e9 path' \
+  $'invalid-byte-\377-without-control'; do
+  if PATH="$path_probe_bin:$PATH" \
+    _agent_rules_value_has_control "$path_plain_text"; then
+    printf '    control-policy mismatch: value=%q expected=0 actual=1 locale=%q\n' \
+      "$path_plain_text" "${LC_ALL-${LC_CTYPE-${LANG-}}}" >&2
+    path_validation_status=1
+  fi
+done
+_assert_exit "path validation: preserves control-character policy" \
+  0 "$path_validation_status"
+case "${BASH_VERSINFO[5]:-}" in
+  *linux-android*)
+    _assert_file_exists "path validation: Android preserves grep classifier" \
+      "$path_probe_log"
+    ;;
+  *)
+    _assert_path_missing "path validation: common path does not invoke grep" \
+      "$path_probe_log"
+    ;;
+esac
+
 set +e
 # shellcheck disable=SC2016  # Positional parameters expand in the child shell.
 env -u HOME -u XDG_CONFIG_HOME bash -c '

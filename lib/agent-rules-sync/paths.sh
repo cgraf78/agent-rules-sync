@@ -6,10 +6,27 @@ _agent_rules_error() {
 }
 
 _agent_rules_value_has_control() {
-  case "$1" in
-    *$'\n'*) return 0 ;;
+  case "${BASH_VERSINFO[5]:-}" in
+    *linux-android*)
+      # Bash and grep use different character classifiers on Android/Bionic:
+      # under Termux's default locale, grep rejects C1 controls that Bash's ERE
+      # engine misses. Preserve the original validator on Android rather than
+      # approximating its Unicode policy. Keep LC_ALL scoped to printf exactly
+      # as before; moving it across the pipeline would change grep's locale.
+      case "$1" in
+        *$'\n'*) return 0 ;;
+      esac
+      LC_ALL=C printf '%s' "$1" | grep -q '[[:cntrl:]]'
+      return
+      ;;
   esac
-  LC_ALL=C printf '%s' "$1" | grep -q '[[:cntrl:]]'
+
+  # This check is on the manifest hot path for every source, target, and
+  # provider-state destination. On the validated non-Android platforms, Bash's
+  # regex engine applies grep's locale-aware POSIX class even when valid
+  # Unicode controls and malformed bytes coexist. Glob matching does not
+  # preserve that mixed-byte behavior. Keep the common path process-free.
+  [[ "$1" =~ [[:cntrl:]] ]]
 }
 
 _agent_rules_require_absolute() {
