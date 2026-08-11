@@ -1,6 +1,8 @@
 # type<TAB>repository-relative path
 program	bin/agent-rules-sync
 program	install.sh
+program	scripts/checkout-installer.conf
+program	support/install-checkout.sh
 program	lib/agent-rules-sync/api.sh
 program	lib/agent-rules-sync/lock.sh
 program	lib/agent-rules-sync/managed.sh
