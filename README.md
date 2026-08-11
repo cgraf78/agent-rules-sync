@@ -23,7 +23,16 @@ the caller's actual rule and playbook prose.
 
 ## Installation
 
-Clone the repository and install a PATH-visible symlink:
+```bash
+curl -fsSL https://raw.githubusercontent.com/cgraf78/agent-rules-sync/main/install.sh | bash
+```
+
+This keeps a durable managed checkout under `$XDG_DATA_HOME` when that path is
+absolute, or under `$HOME/.local/share` otherwise, and publishes a PATH-visible
+symlink to its command. Rerunning the curl command safely updates the clean
+managed checkout before republishing the link.
+
+To choose and manage the checkout yourself instead:
 
 ```bash
 git clone https://github.com/cgraf78/agent-rules-sync.git
@@ -32,9 +41,9 @@ cd agent-rules-sync
 ```
 
 `PREFIX` defaults to `$HOME/.local`; `BIN_DIR` can override its `bin` child.
-The symlink resolves back to the matching checkout, keeping the launcher and
-private shell library version-coupled. Dependency managers can instead expose
-`bin/agent-rules-sync` directly. For example, a shdeps entry is:
+The installed symlink resolves back to the matching checkout, keeping the
+launcher and private shell library version-coupled. Dependency managers can
+instead expose `bin/agent-rules-sync` directly. For example, a shdeps entry is:
 
 ```text
 cgraf78/agent-rules-sync  github
