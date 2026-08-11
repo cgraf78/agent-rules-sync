@@ -45,4 +45,19 @@ _assert_file_content "installer: preserves a non-symlink target" \
 _assert_contains "installer: refusal is actionable" \
   "refusing to replace non-symlink" "$(<"$work/blocked.err")"
 
+missing_root="$work/missing-source"
+missing_prefix="$work/missing-prefix"
+mkdir -p "$missing_root"
+cp "$repo_root/install.sh" "$missing_root/install.sh"
+set +e
+PREFIX="$missing_prefix" "$missing_root/install.sh" \
+  >"$work/missing.out" 2>"$work/missing.err"
+status=$?
+set -e
+_assert_exit "installer: rejects a missing command source" 1 "$status"
+_assert_path_missing "installer: missing source publishes no command" \
+  "$missing_prefix/bin/agent-rules-sync"
+_assert_contains "installer: missing source is actionable" \
+  "command source is not executable" "$(<"$work/missing.err")"
+
 _test_summary
