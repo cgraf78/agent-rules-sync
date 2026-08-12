@@ -107,6 +107,9 @@ _agent_rules_register_file_ids() {
 
 _agent_rules_playbook_trigger() {
   local file="$1" line trigger='' count=0 title_seen=0 metadata_seen=0
+  # Only leading metadata is authoritative routing configuration. Accept one
+  # conventional Markdown title before it, then stop at body content so prose,
+  # examples, or quoted metadata cannot silently redefine the playbook trigger.
   while IFS= read -r line || [[ -n "$line" ]]; do
     case "$line" in
       '') continue ;;
