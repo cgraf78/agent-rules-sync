@@ -48,6 +48,11 @@ cat >"$authorized/first.md" <<'EOF'
 
 <!-- agent-rule-id: example-first-playbook -->
 <!-- agent-rule-trigger: Run first, despite its name -->
+
+Body.
+
+## Later metadata-shaped prose
+<!-- agent-rule-trigger: This body decoy must not become a route -->
 EOF
 cat >"$manifest" <<EOF
 version	agent-rules-sync-manifest-v1
@@ -114,6 +119,8 @@ fi
 # shellcheck disable=SC2016  # Markdown backticks are intentional literals.
 _assert_contains "playbooks: preserves trigger punctuation" \
   'Run second, after the first: `z/second.md`' "$generated"
+_assert_not_contains "playbooks: ignores trigger-shaped prose in the body" \
+  "This body decoy must not become a route" "$generated"
 _assert_not_contains "playbooks: routes without embedding playbook prose" \
   "# Second playbook" "$generated"
 
@@ -343,6 +350,22 @@ _invalid_manifest "missing playbook trigger" "exactly one agent-rule-trigger" \
   $'playbook-root\t'"$playbooks" \
   $'rule\t'"$rules/000-main.md" \
   $'playbook\tmissing.md\t'"$missing_trigger" \
+  $'target\tclaude'
+
+duplicate_trigger="$authorized/duplicate-trigger.md"
+cat >"$duplicate_trigger" <<'EOF'
+# Duplicate trigger
+
+<!-- agent-rule-id: example-duplicate-trigger -->
+<!-- agent-rule-trigger: First trigger -->
+<!-- agent-rule-trigger: Second trigger -->
+EOF
+_invalid_manifest "duplicate playbook trigger" "exactly one agent-rule-trigger" \
+  $'version\tagent-rules-sync-manifest-v1' \
+  $'rule-root\t'"$rules" \
+  $'playbook-root\t'"$playbooks" \
+  $'rule\t'"$rules/000-main.md" \
+  $'playbook\tduplicate.md\t'"$duplicate_trigger" \
   $'target\tclaude'
 
 duplicate_index="$rules/040-duplicate-index.md"
