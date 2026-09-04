@@ -499,4 +499,24 @@ _assert_file_missing "uninstall: removes durable target inventory" \
   "$state/agent-rules-sync/targets-v1"
 _assert_file_exists "uninstall: does not remove policy source" "$rules/main.md"
 
+# `uninstall` stays discoverable for every built-in even when the durable
+# inventory is gone: a Muse target published earlier must still be pruned.
+cat >"$manifest" <<EOF
+version	agent-rules-sync-manifest-v1
+rule-root	$rules
+playbook-root	$playbooks
+rule	$rules/main.md
+target	muse
+EOF
+muse_target="$config/muse/AGENTS.md"
+HOME="$home" XDG_CONFIG_HOME="$config" XDG_STATE_HOME="$state" \
+  "$cli" --manifest "$manifest" >/dev/null 2>"$work/muse-sync.err"
+_assert_exit "uninstall setup: Muse sync succeeds" 0 "$?"
+_assert_file_exists "uninstall setup: Muse target is published" "$muse_target"
+rm -f "$manifest" "$state/agent-rules-sync/targets-v1"
+HOME="$home" XDG_CONFIG_HOME="$config" XDG_STATE_HOME="$state" \
+  "$cli" uninstall >"$work/muse-uninstall.out" 2>"$work/muse-uninstall.err"
+_assert_exit "uninstall: succeeds without inventory for the Muse target" 0 "$?"
+_assert_path_missing "uninstall: removes provider-only Muse target" "$muse_target"
+
 _test_summary
