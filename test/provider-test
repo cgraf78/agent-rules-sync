@@ -390,4 +390,49 @@ _invalid_manifest "duplicate playbook index" "exactly one playbook index" \
   $'playbook\tfirst.md\t'"$authorized/first.md" \
   $'target\tclaude'
 
+# Agreement: every known agent is accepted as an explicit target, detected
+# on PATH, published by `installed`, and pruned by inventory-less uninstall.
+# A listed agent missing any case branch fails here instead of shipping
+# a silent gap like the muse omissions did.
+. "$repo_root/lib/agent-rules-sync/targets.sh"
+. "$repo_root/lib/agent-rules-sync/paths.sh"
+for agent in "${_AGENT_RULES_KNOWN_AGENTS[@]}"; do
+  agree_work=$(_tmpdir)
+  agree_home="$agree_work/home"
+  agree_config="$agree_work/config"
+  agree_state="$agree_work/state"
+  agree_bin="$agree_work/bin"
+  mkdir -p "$agree_home" "$agree_bin"
+  printf '#!/usr/bin/env bash\nexit 0\n' >"$agree_bin/$agent"
+  chmod +x "$agree_bin/$agent"
+  agree_manifest="$agree_work/manifest.tsv"
+  agree_rules="$agree_work/rules"
+  mkdir -p "$agree_rules"
+  printf '# Main\n\n<!-- agent-rule-id: agree-main -->\n' >"$agree_rules/main.md"
+  printf 'version\tagent-rules-sync-manifest-v1\nrule-root\t%s\nplaybook-root\t%s\nrule\t%s/main.md\ntarget\t%s\n' \
+    "$agree_rules" "$agree_rules" "$agree_rules" "$agent" >"$agree_manifest"
+  HOME="$agree_home" XDG_CONFIG_HOME="$agree_config" \
+    XDG_STATE_HOME="$agree_state" PATH="$agree_bin:${BASH%/*}:/usr/bin:/bin" \
+    "$cli" --manifest "$agree_manifest" >/dev/null 2>"$agree_work/explicit.err"
+  _assert_exit "agreement: explicit target $agent syncs" 0 "$?"
+  printf 'version\tagent-rules-sync-manifest-v1\nrule-root\t%s\nplaybook-root\t%s\nrule\t%s/main.md\ntarget\tinstalled\n' \
+    "$agree_rules" "$agree_rules" "$agree_rules" >"$agree_manifest"
+  HOME="$agree_home" XDG_CONFIG_HOME="$agree_config" \
+    XDG_STATE_HOME="$agree_state" PATH="$agree_bin:${BASH%/*}:/usr/bin:/bin" \
+    "$cli" --manifest "$agree_manifest" >/dev/null 2>"$agree_work/installed.err"
+  _assert_exit "agreement: installed expansion syncs with $agent present" 0 "$?"
+  agree_target=$(HOME="$agree_home" XDG_CONFIG_HOME="$agree_config" \
+    _agent_rules_builtin_target "$agent") || {
+    _fail "agreement: builtin target resolves for $agent"
+    continue
+  }
+  _assert_file_exists "agreement: installed expansion publishes $agent" "$agree_target"
+  rm -f "$agree_manifest" "$agree_state/agent-rules-sync/targets-v1"
+  HOME="$agree_home" XDG_CONFIG_HOME="$agree_config" \
+    XDG_STATE_HOME="$agree_state" PATH="$agree_bin:${BASH%/*}:/usr/bin:/bin" \
+    "$cli" uninstall >/dev/null 2>"$agree_work/uninstall.err"
+  _assert_exit "agreement: uninstall succeeds without inventory for $agent" 0 "$?"
+  _assert_path_missing "agreement: uninstall prunes provider-only $agent target" "$agree_target"
+done
+
 _test_summary
