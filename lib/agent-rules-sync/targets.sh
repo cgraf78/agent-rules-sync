@@ -3,6 +3,11 @@
 
 _AGENT_RULES_TARGET_PATHS=()
 declare -A _AGENT_RULES_TARGET_PATH_SEEN=()
+# Every agent the provider can register. The `installed` expansion, the
+# uninstall discovery, and the agreement test below all read this list, so
+# a cache-free way to add an agent is: extend this list, add the
+# `has_agent`/`builtin_target` case branches, and let the test enforce them.
+_AGENT_RULES_KNOWN_AGENTS=(claude codex gemini opencode muse)
 
 _agent_rules_has_agent() {
   case "$1" in
@@ -57,7 +62,7 @@ _agent_rules_collect_targets() {
   _AGENT_RULES_TARGET_PATH_SEEN=()
   for id in "${_AGENT_RULES_TARGET_IDS[@]+"${_AGENT_RULES_TARGET_IDS[@]}"}"; do
     if [[ "$id" == installed ]]; then
-      for agent in claude codex gemini opencode muse; do
+      for agent in "${_AGENT_RULES_KNOWN_AGENTS[@]}"; do
         _agent_rules_has_agent "$agent" || continue
         _agent_rules_add_builtin_target "$agent" || return 1
       done
