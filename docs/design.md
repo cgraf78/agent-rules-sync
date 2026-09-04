@@ -8,8 +8,8 @@ configuration managers:
 - strict versioned-manifest parsing and source-metadata validation;
 - authoritative rule and playbook order, playbook route rendering, and the
   exactly-once index contract;
-- Claude, Codex, Gemini, OpenCode, installed-agent, and absolute custom-file
-  target expansion;
+- Claude, Codex, Gemini, OpenCode, Muse, installed-agent, and absolute
+  custom-file target expansion;
 - managed-block publication, permissions, idempotence, durable target state,
   stale cleanup, and uninstall; and
 - conservative takeover of the exact historical dot publisher artifacts.

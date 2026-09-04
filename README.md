@@ -5,7 +5,7 @@
 [![Bash](https://img.shields.io/badge/bash-%3E%3D4.0-blue.svg)](https://www.gnu.org/software/bash/)
 
 `agent-rules-sync` synchronizes one shared rule document for Claude, Codex, Gemini,
-OpenCode, and explicitly configured file targets. Ordered Markdown fragments
+OpenCode, Muse, and explicitly configured file targets. Ordered Markdown fragments
 remain owned by the caller. A versioned manifest tells the provider exactly
 which rule and playbook files are trusted, which order they use, and where the
 result should be published.
@@ -132,8 +132,9 @@ Explicit target IDs always publish their corresponding file:
 | `codex` | `$HOME/.codex/AGENTS.md` |
 | `gemini` | `$HOME/.gemini/GEMINI.md` |
 | `opencode` | `$XDG_CONFIG_HOME/opencode/AGENTS.md` |
+| `muse` | `$XDG_CONFIG_HOME/muse/AGENTS.md` |
 
-`target installed` expands only to those four public built-ins whose commands
+`target installed` expands only to those five public built-ins whose commands
 are available on `PATH`. Explicit and installed targets can be combined;
 duplicate destination files are written once. `target-file` supports an
 absolute custom destination without teaching this public provider about a
