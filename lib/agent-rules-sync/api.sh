@@ -59,7 +59,7 @@ _agent_rules_uninstall_locked() {
 
   # Known built-ins remain discoverable even if the inventory was manually
   # removed. Custom targets are intentionally touched only when recorded.
-  for agent in claude codex gemini opencode; do
+  for agent in claude codex gemini opencode muse; do
     target=$(_agent_rules_builtin_target "$agent") || return 1
     _agent_rules_add_previous_target "$target" || return 1
   done

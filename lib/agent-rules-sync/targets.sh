@@ -10,6 +10,7 @@ _agent_rules_has_agent() {
     codex) command -v codex >/dev/null 2>&1 ;;
     gemini) command -v gemini >/dev/null 2>&1 ;;
     opencode) command -v opencode >/dev/null 2>&1 ;;
+    muse) command -v muse >/dev/null 2>&1 ;;
     *) return 1 ;;
   esac
 }
@@ -56,7 +57,7 @@ _agent_rules_collect_targets() {
   _AGENT_RULES_TARGET_PATH_SEEN=()
   for id in "${_AGENT_RULES_TARGET_IDS[@]+"${_AGENT_RULES_TARGET_IDS[@]}"}"; do
     if [[ "$id" == installed ]]; then
-      for agent in claude codex gemini opencode; do
+      for agent in claude codex gemini opencode muse; do
         _agent_rules_has_agent "$agent" || continue
         _agent_rules_add_builtin_target "$agent" || return 1
       done
