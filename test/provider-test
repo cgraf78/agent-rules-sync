@@ -197,7 +197,7 @@ installed_state="$installed_work/state"
 installed_bin="$installed_work/bin"
 installed_manifest="$installed_work/installed.tsv"
 mkdir -p "$installed_home" "$installed_bin"
-for command in codex gemini future-agent; do
+for command in codex gemini muse future-agent; do
   cat >"$installed_bin/$command" <<'EOF'
 #!/usr/bin/env bash
 exit 0
@@ -222,6 +222,8 @@ _assert_file_exists "installed targets: discovers Codex" \
   "$installed_home/.codex/AGENTS.md"
 _assert_file_exists "installed targets: discovers Gemini" \
   "$installed_home/.gemini/GEMINI.md"
+_assert_file_exists "installed targets: discovers Muse" \
+  "$installed_config/muse/AGENTS.md"
 _assert_file_missing "installed targets: skips absent Claude" \
   "$installed_home/.claude/CLAUDE.md"
 _assert_file_missing "installed targets: unknown agents are not implicitly supported" \
