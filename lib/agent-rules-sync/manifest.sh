@@ -220,7 +220,7 @@ _agent_rules_add_playbook() {
 _agent_rules_add_target_id() {
   local target="$1"
   case "$target" in
-    claude | codex | gemini | opencode | installed) ;;
+    claude | codex | gemini | muse | opencode | installed) ;;
     *)
       _agent_rules_error "unsupported target: $target"
       return 1

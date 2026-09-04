@@ -165,6 +165,11 @@ _agent_rules_builtin_target() {
       config=$(_agent_rules_config_home) || return 1
       printf '%s/opencode/AGENTS.md\n' "$config"
       ;;
+    muse)
+      # Muse reads this as user-global rules (canary-verified).
+      config=$(_agent_rules_config_home) || return 1
+      printf '%s/muse/AGENTS.md\n' "$config"
+      ;;
     *)
       _agent_rules_error "unsupported target: $agent"
       return 1
@@ -180,4 +185,5 @@ _agent_rules_validate_runtime_paths() {
   _agent_rules_builtin_target codex >/dev/null || return 1
   _agent_rules_builtin_target gemini >/dev/null || return 1
   _agent_rules_builtin_target opencode >/dev/null || return 1
+  _agent_rules_builtin_target muse >/dev/null || return 1
 }

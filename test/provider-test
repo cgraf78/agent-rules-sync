@@ -66,6 +66,7 @@ target	claude
 target	codex
 target	gemini
 target	opencode
+target	muse
 target-file	$custom
 EOF
 
@@ -79,6 +80,7 @@ for target in \
   "$home/.codex/AGENTS.md" \
   "$home/.gemini/GEMINI.md" \
   "$config/opencode/AGENTS.md" \
+  "$config/muse/AGENTS.md" \
   "$custom"; do
   _assert_file_exists "targets: publishes $target" "$target"
 done
@@ -88,6 +90,7 @@ for target in \
   "$home/.codex/AGENTS.md" \
   "$home/.gemini/GEMINI.md" \
   "$config/opencode/AGENTS.md" \
+  "$config/muse/AGENTS.md" \
   "$custom"; do
   _assert_file_content "targets: shares one rendered artifact with $target" \
     "$generated" "$target"
