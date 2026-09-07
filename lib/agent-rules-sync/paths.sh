@@ -170,6 +170,11 @@ _agent_rules_builtin_target() {
       config=$(_agent_rules_config_home) || return 1
       printf '%s/muse/AGENTS.md\n' "$config"
       ;;
+    grok)
+      # Grok loads home-level rules from ~/.grok/rules/*.md, not a single file.
+      home=$(_agent_rules_home) || return 1
+      printf '%s/.grok/rules/agent-rules.md\n' "$home"
+      ;;
     *)
       _agent_rules_error "unsupported target: $agent"
       return 1
@@ -186,4 +191,5 @@ _agent_rules_validate_runtime_paths() {
   _agent_rules_builtin_target gemini >/dev/null || return 1
   _agent_rules_builtin_target opencode >/dev/null || return 1
   _agent_rules_builtin_target muse >/dev/null || return 1
+  _agent_rules_builtin_target grok >/dev/null || return 1
 }

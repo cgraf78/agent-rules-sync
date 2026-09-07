@@ -7,7 +7,7 @@ declare -A _AGENT_RULES_TARGET_PATH_SEEN=()
 # uninstall discovery, and the agreement test below all read this list, so
 # a cache-free way to add an agent is: extend this list, add the
 # `has_agent`/`builtin_target` case branches, and let the test enforce them.
-_AGENT_RULES_KNOWN_AGENTS=(claude codex gemini opencode muse)
+_AGENT_RULES_KNOWN_AGENTS=(claude codex gemini opencode muse grok)
 
 _agent_rules_has_agent() {
   case "$1" in
@@ -16,6 +16,7 @@ _agent_rules_has_agent() {
     gemini) command -v gemini >/dev/null 2>&1 ;;
     opencode) command -v opencode >/dev/null 2>&1 ;;
     muse) command -v muse >/dev/null 2>&1 ;;
+    grok) command -v grok >/dev/null 2>&1 ;;
     *) return 1 ;;
   esac
 }
