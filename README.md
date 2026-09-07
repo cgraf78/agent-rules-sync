@@ -5,10 +5,10 @@
 [![Bash](https://img.shields.io/badge/bash-%3E%3D4.0-blue.svg)](https://www.gnu.org/software/bash/)
 
 `agent-rules-sync` synchronizes one shared rule document for Claude, Codex, Gemini,
-OpenCode, Muse, and explicitly configured file targets. Ordered Markdown fragments
-remain owned by the caller. A versioned manifest tells the provider exactly
-which rule and playbook files are trusted, which order they use, and where the
-result should be published.
+OpenCode, Muse, Grok, and explicitly configured file targets. Ordered Markdown
+fragments remain owned by the caller. A versioned manifest tells the provider
+exactly which rule and playbook files are trusted, which order they use, and
+where the result should be published.
 
 ```console
 agent-rules-sync
@@ -133,8 +133,12 @@ Explicit target IDs always publish their corresponding file:
 | `gemini` | `$HOME/.gemini/GEMINI.md` |
 | `opencode` | `$XDG_CONFIG_HOME/opencode/AGENTS.md` |
 | `muse` | `$XDG_CONFIG_HOME/muse/AGENTS.md` |
+| `grok` | `$HOME/.grok/rules/agent-rules.md` |
 
-`target installed` expands only to those five public built-ins whose commands
+Grok's native home rules directory is `~/.grok/rules/`, so the published file
+is `agent-rules.md` inside that directory rather than a single `AGENTS.md`.
+
+`target installed` expands only to those six public built-ins whose commands
 are available on `PATH`. Explicit and installed targets can be combined;
 duplicate destination files are written once. `target-file` supports an
 absolute custom destination without teaching this public provider about a

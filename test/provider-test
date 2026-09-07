@@ -67,6 +67,7 @@ target	codex
 target	gemini
 target	opencode
 target	muse
+target	grok
 target-file	$custom
 EOF
 
@@ -81,6 +82,7 @@ for target in \
   "$home/.gemini/GEMINI.md" \
   "$config/opencode/AGENTS.md" \
   "$config/muse/AGENTS.md" \
+  "$home/.grok/rules/agent-rules.md" \
   "$custom"; do
   _assert_file_exists "targets: publishes $target" "$target"
 done
@@ -91,6 +93,7 @@ for target in \
   "$home/.gemini/GEMINI.md" \
   "$config/opencode/AGENTS.md" \
   "$config/muse/AGENTS.md" \
+  "$home/.grok/rules/agent-rules.md" \
   "$custom"; do
   _assert_file_content "targets: shares one rendered artifact with $target" \
     "$generated" "$target"
@@ -226,6 +229,8 @@ _assert_file_exists "installed targets: discovers Muse" \
   "$installed_config/muse/AGENTS.md"
 _assert_file_missing "installed targets: skips absent Claude" \
   "$installed_home/.claude/CLAUDE.md"
+_assert_file_missing "installed targets: skips absent Grok" \
+  "$installed_home/.grok/rules/agent-rules.md"
 _assert_file_missing "installed targets: unknown agents are not implicitly supported" \
   "$installed_home/.config/future-agent/AGENTS.md"
 
