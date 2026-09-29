@@ -1,7 +1,7 @@
 # Test suites
 
-`test/run` executes every behavior suite and the repository-owned ShellCheck
-inventory:
+`test/run` executes every behavior suite and, when `shellcheck` is on `PATH`,
+the repository-owned ShellCheck inventory:
 
 - `cli-test` covers public dispatch, manifest selection, XDG fallback, Bash
   version rejection, and signal cleanup;

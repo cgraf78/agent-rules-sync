@@ -209,6 +209,10 @@ Run the complete behavior, installer, and ShellCheck suite:
 test/run
 ```
 
+ShellCheck is skipped when `shellcheck` is not on `PATH` or when
+`AGENT_RULES_SYNC_SKIP_SHELLCHECK=1` is set, so install it locally to get the
+full suite.
+
 All fixtures contain synthetic public rules and playbooks inside validated
 temporary homes. They never inspect or modify installed agent targets. See
 [`test/README.md`](test/README.md) and [`docs/design.md`](docs/design.md) for
