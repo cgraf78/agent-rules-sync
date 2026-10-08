@@ -189,6 +189,53 @@ _assert_contains "publication: malformed-block error names the target" \
 _assert_file_content "publication: malformed target remains byte-for-byte intact" \
   "$malformed_before" "$malformed"
 
+# An unreadable target must fail closed rather than read as empty: sync would
+# otherwise replace the owner's prose with only the generated block, and
+# prune would skip it and strand the block. Root can read anything.
+if [[ "$(id -u)" -ne 0 ]]; then
+  unreadable="$work/unreadable/AGENTS.md"
+  mkdir -p "${unreadable%/*}"
+  printf 'owner prose that must survive\n' >"$unreadable"
+  chmod 200 "$unreadable"
+  cat >"$manifest" <<EOF
+version	agent-rules-sync-manifest-v1
+rule-root	$rules
+playbook-root	$playbooks
+rule	$rules/main.md
+target-file	$unreadable
+EOF
+  set +e
+  HOME="$home" XDG_CONFIG_HOME="$config" XDG_STATE_HOME="$state" \
+    "$cli" --manifest "$manifest" >/dev/null 2>"$work/unreadable.err"
+  status=$?
+  set -e
+  _assert_exit "publication: an unreadable target fails closed" 1 "$status"
+  _assert_contains "publication: unreadable-target error is actionable" \
+    "cannot read target:" "$(<"$work/unreadable.err")"
+  chmod 600 "$unreadable"
+  _assert_file_content "publication: unreadable target prose is preserved" \
+    "owner prose that must survive" "$unreadable"
+
+  HOME="$home" XDG_CONFIG_HOME="$config" XDG_STATE_HOME="$state" \
+    "$cli" --manifest "$manifest" >/dev/null 2>"$work/unreadable-sync.err"
+  _assert_exit "setup: readable target publishes" 0 "$?"
+  chmod 200 "$unreadable"
+  set +e
+  HOME="$home" XDG_CONFIG_HOME="$config" XDG_STATE_HOME="$state" \
+    "$cli" uninstall >/dev/null 2>"$work/unreadable-prune.err"
+  status=$?
+  set -e
+  _assert_exit "prune: an unreadable target fails closed" 1 "$status"
+  chmod 600 "$unreadable"
+  _assert_contains "prune: unreadable target keeps its block for a retry" \
+    "# agent-rules-sync:aggregate begin" "$(<"$unreadable")"
+  HOME="$home" XDG_CONFIG_HOME="$config" XDG_STATE_HOME="$state" \
+    "$cli" uninstall >/dev/null 2>"$work/unreadable-retry.err"
+  _assert_exit "prune: retry after restoring access succeeds" 0 "$?"
+  _assert_file_content "prune: retry keeps only owner prose" \
+    "owner prose that must survive" "$unreadable"
+fi
+
 mismatched="$work/mismatched/AGENTS.md"
 mkdir -p "${mismatched%/*}"
 cat >"$mismatched" <<'EOF'
