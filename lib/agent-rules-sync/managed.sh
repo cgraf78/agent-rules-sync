@@ -149,7 +149,12 @@ _agent_rules_publish_target() {
     _agent_rules_error "target is not a regular file: $target"
     return 1
   fi
-  [[ -f "$target" ]] && current=$(<"$target")
+  # A failed read must not look like an empty file: publishing would then
+  # replace the owner's unmanaged prose with only the generated block.
+  if [[ -f "$target" ]] && ! current=$(<"$target"); then
+    _agent_rules_error "cannot read target: $target"
+    return 1
+  fi
   if ! _agent_rules_strip_managed "$current"; then
     _agent_rules_error "malformed managed block in target: $target"
     return 1
@@ -175,7 +180,12 @@ _agent_rules_prune_target() {
     _agent_rules_error "refusing to prune non-file target: $target"
     return 1
   fi
-  current=$(<"$target")
+  # Likewise, an unreadable target would otherwise look block-free and be
+  # skipped silently, leaving generated policy behind after uninstall.
+  current=$(<"$target") || {
+    _agent_rules_error "cannot read target: $target"
+    return 1
+  }
   if ! _agent_rules_strip_managed "$current"; then
     _agent_rules_error "malformed managed block in target: $target"
     return 1

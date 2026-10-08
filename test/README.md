@@ -11,7 +11,7 @@ the repository-owned ShellCheck inventory:
 - `managed-test` covers permissions, idempotent publication, durable state,
   target replacement, collision rejection, single-writer locking, dot-marker
   and versioned-state takeover, retired v1 link-cache non-authority,
-  malformed-marker handling, and uninstall;
+  malformed-marker and unreadable-target handling, and uninstall;
 - `check-test` covers every `check` state, the exit-status contract that
   separates drift from invalid input and usage, owner-prose tolerance,
   prune-mode expectations, and proof that checking mutates nothing; and
