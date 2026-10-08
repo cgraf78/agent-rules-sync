@@ -12,6 +12,7 @@ program	lib/agent-rules-sync/paths.sh
 program	lib/agent-rules-sync/render.sh
 program	lib/agent-rules-sync/targets.sh
 program	lib/agent-rules-sync/temp.sh
+program	test/check-test
 program	test/cli-test
 program	test/install-test
 program	test/lib/test.sh

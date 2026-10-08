@@ -13,6 +13,7 @@ where the result should be published.
 ```console
 agent-rules-sync
 agent-rules-sync --manifest /absolute/path/to/manifest.tsv
+agent-rules-sync check --manifest /absolute/path/to/manifest.tsv
 agent-rules-sync uninstall
 ```
 
@@ -188,18 +189,56 @@ reclaimed conservatively. This keeps publication, stale pruning, and inventory
 replacement under one writer without requiring the non-portable `flock`
 command.
 
+## Checking for drift
+
+`check` accepts the same manifest selection as a sync, runs the same
+validation and rendering, and modifies nothing: no target, parent directory,
+permission, lock, or state file. It prints one tab-separated record per
+selected target, in target order, naming the resolved destination:
+
+```text
+current<TAB>/home/user/.claude/CLAUDE.md
+stale<TAB>/home/user/.codex/AGENTS.md
+```
+
+| State | Meaning |
+| --- | --- |
+| `current` | The managed block and mode already match what sync publishes |
+| `missing` | The target does not exist |
+| `unmanaged` | The target exists but has no managed block |
+| `stale` | The block differs, is duplicated, or a retired dot block remains |
+| `malformed` | Ownership markers are unbalanced; sync refuses this target |
+| `not-file` | The destination is not a regular file |
+| `mode` | The block is current but the mode is not `0600` |
+
+Only provider-owned text is compared. Unmanaged prose, its spacing, and the
+block's position never count as drift, even though the next sync may still
+normalize them. The block's `# manifest:` header is provenance and is compared
+by position only, so the same manifest reached through another path spelling
+is not drift. When the manifest selects no rules, sync would prune instead, so
+a target without a block is `current` and a remaining block is `stale`.
+Previously selected targets that the next sync would prune are not reported.
+A symlinked target's mode is read from the file it points to.
+
+Exit status is `0` when every target is `current`, `3` when any is not, `1`
+when the manifest, its sources, or a target cannot be validated or read, and
+`2` for invalid usage. Stdout is complete only for statuses `0` and `3`.
+Unknown future states should be treated as drift. Releases without `check`
+reject it as invalid usage with status `2` before touching anything.
+
 ## Failure behavior
 
 Malformed manifests, source metadata, ownership delimiters, migration versions,
-locks, or durable state return status 1. Invalid CLI usage returns status 2. A
-validation or render failure leaves the last valid artifacts intact. A
-filesystem failure is fatal and retains the last durable target inventory so
-the next invocation can retry cleanup.
+locks, or durable state return status 1. Invalid CLI usage returns status 2;
+`check` additionally returns status 3 for drift. A validation or render
+failure leaves the last valid artifacts intact. A filesystem failure is fatal
+and retains the last durable target inventory so the next invocation can
+retry cleanup.
 
 The CLI owns scratch-file signal traps and preserves conventional HUP, INT,
 and TERM statuses. It requires Bash 4.0 or newer for associative arrays and
 otherwise uses common Unix tools including `awk`, `cat`, `cmp`, `grep`,
-`mktemp`, `readlink`, `sed`, and `stat` in tests.
+`mktemp`, `readlink`, `sed`, and `stat`.
 
 ## Development
 
