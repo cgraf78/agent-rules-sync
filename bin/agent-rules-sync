@@ -45,10 +45,14 @@ _AGENT_RULES_LIB_DIR=$(cd "$_AGENT_RULES_BIN_DIR/../lib/agent-rules-sync" && pwd
 usage() {
   cat <<'EOF'
 Usage: agent-rules-sync [--manifest FILE]
+       agent-rules-sync check [--manifest FILE]
        agent-rules-sync uninstall
 
-With no command, render and publish the selected rules. `uninstall` removes
-only provider-owned generated blocks.
+With no command, render and publish the selected rules. `check` changes
+nothing; it prints one `STATE<TAB>TARGET` line per selected target and exits
+0 when every managed block and mode is current, 3 when any is not, 1 on
+invalid input, and 2 on usage errors. `uninstall` removes only
+provider-owned generated blocks.
 
 Manifest selection:
   --manifest FILE
@@ -60,8 +64,31 @@ their HOME defaults.
 EOF
 }
 
+# Resolve the manifest for a sync or check from its optional arguments.
+# Prints the absolute path; returns 2 for usage errors and 1 for an invalid
+# path or environment so callers keep the documented status contract.
+select_manifest() {
+  local manifest
+  case "$#" in
+    0)
+      if [[ -n "${AGENT_RULES_SYNC_MANIFEST:-}" ]]; then
+        manifest="$AGENT_RULES_SYNC_MANIFEST"
+      else
+        manifest=$(agent_rules_default_manifest) || return 1
+      fi
+      ;;
+    2)
+      [[ "$1" == --manifest ]] || return 2
+      manifest="$2"
+      ;;
+    *) return 2 ;;
+  esac
+  _agent_rules_require_absolute "manifest path" "$manifest" || return 1
+  printf '%s\n' "$manifest"
+}
+
 main() {
-  local command=${1:-} manifest
+  local command=${1:-} manifest status
   case "$command" in
     -h | --help)
       [[ "$#" -eq 1 ]] || {
@@ -70,30 +97,21 @@ main() {
       }
       usage
       ;;
-    '' | --manifest)
-      case "$#" in
-        0)
-          if [[ -n "${AGENT_RULES_SYNC_MANIFEST:-}" ]]; then
-            manifest="$AGENT_RULES_SYNC_MANIFEST"
-          else
-            manifest=$(agent_rules_default_manifest) || return 1
-          fi
-          ;;
-        2)
-          [[ "$1" == --manifest ]] || {
-            usage >&2
-            return 2
-          }
-          manifest="$2"
-          ;;
-        *)
-          usage >&2
-          return 2
-          ;;
-      esac
-      _agent_rules_require_absolute "manifest path" "$manifest" || return 1
-      _agent_rules_install_temp_traps
-      agent_rules_sync "$manifest"
+    '' | --manifest | check)
+      [[ "$command" == check ]] && shift
+      manifest=$(select_manifest "$@")
+      status=$?
+      if ((status == 2)); then
+        usage >&2
+        return 2
+      fi
+      ((status == 0)) || return "$status"
+      if [[ "$command" == check ]]; then
+        agent_rules_check "$manifest"
+      else
+        _agent_rules_install_temp_traps
+        agent_rules_sync "$manifest"
+      fi
       ;;
     uninstall)
       [[ "$#" -eq 1 ]] || {

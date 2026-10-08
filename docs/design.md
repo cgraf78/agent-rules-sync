@@ -66,6 +66,19 @@ retains its owner-selected mode. Validated same-directory temporary files keep
 rename atomic on the destination filesystem; cleanup removes files only and
 never recursively deletes an untrusted `mktemp` result.
 
+## Read-only drift check
+
+`check` answers whether each selected target already carries the managed
+block and mode a sync would publish, so a consumer's health report need not re-render policy or know the ownership
+markers, header lines, or target mode. It reuses the sync path through
+collision validation and then classifies each target instead of publishing.
+Only the provider block and mode are compared because publication preserves
+unmanaged text; reporting owner prose or its spacing as drift would make the
+check noisier than the sync it predicts. The block's manifest header is
+provenance, so a different spelling of the manifest path is not drift. A distinct drift status keeps "out of date"
+separate from "could not answer", and older releases reject the unknown
+command as usage before mutating anything, which lets consumers detect skew.
+
 ## Durable state rather than cache
 
 The target inventory belongs under `XDG_STATE_HOME`, not cache, because it is

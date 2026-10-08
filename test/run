@@ -10,6 +10,7 @@ for suite in \
   "$repo_root/test/cli-test" \
   "$repo_root/test/provider-test" \
   "$repo_root/test/managed-test" \
+  "$repo_root/test/check-test" \
   "$repo_root/test/install-test"; do
   printf '=== %s ===\n' "${suite##*/}"
   "$suite" || status=1

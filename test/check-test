@@ -1,0 +1,392 @@
+#!/usr/bin/env bash
+# Read-only drift reporting: states, exit-status contract, and no mutation.
+
+set -o pipefail
+export NO_COLOR=1
+
+repo_root=$(cd "${BASH_SOURCE[0]%/*}/.." && pwd -P) || exit 1
+# shellcheck source=lib/test.sh
+. "$repo_root/test/lib/test.sh"
+
+cli="$repo_root/bin/agent-rules-sync"
+work=$(_tmpdir)
+# Command output lives outside the fixture tree so the read-only snapshot
+# below covers every byte check could touch.
+logs=$(_tmpdir)
+home="$work/home"
+config="$work/config"
+state="$work/state"
+rules="$work/rules.d"
+playbooks="$work/playbooks.d"
+manifest="$work/manifest.tsv"
+mkdir -p "$home" "$rules" "$playbooks/git" "$work/out"
+
+# Reports name each target by its resolved spelling, so expectations must
+# resolve the fixture root the same way (macOS TMPDIR lives behind /var).
+out=$(cd -P -- "$work/out" && pwd -P)
+first="$out/first/AGENTS.md"
+second="$out/second/AGENTS.md"
+claude_home=$(cd -P -- "$home" && pwd -P)
+claude="$claude_home/.claude/CLAUDE.md"
+
+cat >"$rules/000-main.md" <<'EOF'
+# Main
+
+<!-- agent-rule-id: check-main -->
+
+checked rule
+    indented rule line kept verbatim
+
+<!-- agent-rules-sync-playbook-index -->
+EOF
+cat >"$playbooks/git/flow.md" <<'EOF'
+# Flow
+
+<!-- agent-rule-id: check-flow -->
+<!-- agent-rule-trigger: When checking flow -->
+EOF
+write_manifest() {
+  cat >"$manifest" <<EOF
+version	agent-rules-sync-manifest-v1
+rule-root	$rules
+playbook-root	$playbooks
+rule	$rules/000-main.md
+playbook	git/flow.md	$playbooks/git/flow.md
+target	claude
+target-file	$first
+target-file	$second
+EOF
+}
+write_manifest
+
+file_mode() {
+  stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null
+}
+
+# List every path in the fixture tree with its type, mode, and content
+# checksum (or link target), so any write, chmod, create, or delete shows up.
+snapshot() {
+  local entry
+  (cd "$work" && find . -print) | LC_ALL=C sort | while IFS= read -r entry; do
+    if [[ -L "$work/$entry" ]]; then
+      printf 'L %s %s\n' "$entry" "$(readlink "$work/$entry")"
+    elif [[ -f "$work/$entry" ]]; then
+      printf 'F %s %s %s\n' "$entry" "$(file_mode "$work/$entry")" \
+        "$(cksum <"$work/$entry" 2>/dev/null || printf unreadable)"
+    else
+      printf 'D %s %s\n' "$entry" "$(file_mode "$work/$entry")"
+    fi
+  done
+}
+
+# Run the CLI against the fixture roots, leaving stdout, stderr, and the exit
+# status in files and $status for the assertions that follow. Every `check`
+# run is also proven read-only against a full fixture snapshot.
+run() {
+  local before=''
+  [[ "${1:-}" == check ]] && before=$(snapshot)
+  HOME="$home" XDG_CONFIG_HOME="$config" XDG_STATE_HOME="$state" \
+    "$cli" "$@" >"$logs/run.out" 2>"$logs/run.err"
+  status=$?
+  if [[ "${1:-}" == check ]]; then
+    _assert_eq "read-only: check $* leaves the fixture untouched" \
+      "$before" "$(snapshot)"
+  fi
+}
+
+sync_ok() {
+  run --manifest "$manifest"
+  _assert_exit "setup: sync succeeds ($*)" 0 "$status"
+}
+
+record() {
+  printf '%s\t%s' "$1" "$2"
+}
+
+# --- Usage and input errors keep statuses distinct from drift. ---
+
+run check unexpected
+_assert_exit "usage: a stray argument is a usage error" 2 "$status"
+_assert_contains "usage: error prints usage" "Usage:" "$(<"$logs/run.err")"
+run check --manifest
+_assert_exit "usage: --manifest without a value is a usage error" 2 "$status"
+run check --manifest "$manifest" extra
+_assert_exit "usage: an extra argument is a usage error" 2 "$status"
+run check --manifest relative.tsv
+_assert_exit "input: a relative manifest is invalid" 1 "$status"
+run check --manifest "$work/absent.tsv"
+_assert_exit "input: an unreadable manifest is invalid" 1 "$status"
+_assert_contains "input: unreadable-manifest error is actionable" \
+  "manifest is not a readable file" "$(<"$logs/run.err")"
+_assert_eq "input: an invalid manifest reports no targets" "" "$(<"$logs/run.out")"
+
+cp "$rules/000-main.md" "$rules/001-dup.md"
+cat >"$work/dup.tsv" <<EOF
+version	agent-rules-sync-manifest-v1
+rule-root	$rules
+playbook-root	$playbooks
+rule	$rules/000-main.md
+rule	$rules/001-dup.md
+playbook	git/flow.md	$playbooks/git/flow.md
+target-file	$first
+EOF
+run check --manifest "$work/dup.tsv"
+_assert_exit "input: a manifest sync would reject is invalid, not drift" \
+  1 "$status"
+_assert_contains "input: validation error is the sync error" \
+  "duplicate agent-rule-id" "$(<"$logs/run.err")"
+rm -f "$rules/001-dup.md"
+
+cat >"$work/collide.tsv" <<EOF
+version	agent-rules-sync-manifest-v1
+rule-root	$rules
+playbook-root	$playbooks
+rule	$rules/000-main.md
+playbook	git/flow.md	$playbooks/git/flow.md
+target-file	$rules/000-main.md
+EOF
+run check --manifest "$work/collide.tsv"
+_assert_exit "input: a target colliding with a source is invalid" 1 "$status"
+
+# --- Before any sync, every selected target is missing. ---
+
+run check --manifest "$manifest"
+_assert_exit "missing: drift exits 3" 3 "$status"
+_assert_eq "missing: one record per target in manifest order" \
+  "$(record missing "$claude")"$'\n'"$(record missing "$first")"$'\n'"$(record missing "$second")" \
+  "$(<"$logs/run.out")"
+_assert_eq "missing: drift is not an error" "" "$(<"$logs/run.err")"
+_assert_path_missing "read-only: check creates no target parent" "${first%/*}"
+_assert_path_missing "read-only: check creates no provider state" \
+  "$state/agent-rules-sync"
+
+AGENT_RULES_SYNC_MANIFEST="$manifest" run check
+_assert_exit "selection: check honors AGENT_RULES_SYNC_MANIFEST" 3 "$status"
+
+# --- A fresh sync is current. ---
+
+sync_ok initial
+run check --manifest "$manifest"
+_assert_exit "current: a fresh sync checks clean" 0 "$status"
+_assert_eq "current: every target reports current" \
+  "$(record current "$claude")"$'\n'"$(record current "$first")"$'\n'"$(record current "$second")" \
+  "$(<"$logs/run.out")"
+
+# Unmanaged prose is owner text; neither its presence nor its position relative
+# to the block is drift.
+{
+  printf 'owner note before\n# manifest: owner text that only looks like a header\n\n\n'
+  cat "$first"
+  printf '\nowner note after\n'
+} >"$work/prose"
+cat "$work/prose" >"$first"
+run check --manifest "$manifest"
+_assert_exit "unmanaged prose: surrounding owner text stays current" 0 "$status"
+
+# --- Each drift state is reported for the affected target only. ---
+
+before=$(<"$first")
+sed 's/^checked rule$/tampered rule/' "$work/prose" >"$first"
+tampered=$(<"$first")
+run check --manifest "$manifest"
+_assert_exit "stale: an edited block is drift" 3 "$status"
+_assert_eq "stale: only the edited target drifts" \
+  "$(record current "$claude")"$'\n'"$(record stale "$first")"$'\n'"$(record current "$second")" \
+  "$(<"$logs/run.out")"
+_assert_file_content "read-only: check leaves a stale target untouched" \
+  "$tampered" "$first"
+cat "$work/prose" >"$first"
+_assert_file_content "setup: restored target matches" "$before" "$first"
+
+printf '\nnew source policy\n' >>"$rules/000-main.md"
+run check --manifest "$manifest"
+_assert_exit "stale: a changed source makes every target drift" 3 "$status"
+_assert_eq "stale: source drift reaches every target" \
+  "$(record stale "$claude")"$'\n'"$(record stale "$first")"$'\n'"$(record stale "$second")" \
+  "$(<"$logs/run.out")"
+sync_ok "after source change"
+run check --manifest "$manifest"
+_assert_exit "stale: sync repairs source drift" 0 "$status"
+
+# The header names the manifest by the spelling sync was given. Reaching the
+# same manifest through a symlinked directory publishes identical policy.
+ln -s "$work" "$work/alias"
+run --manifest "$work/alias/manifest.tsv"
+_assert_exit "setup: sync through a symlinked manifest spelling" 0 "$status"
+_assert_contains "setup: header records the spelling sync was given" \
+  "# manifest: $work/alias/manifest.tsv" "$(<"$first")"
+run check --manifest "$manifest"
+_assert_exit "header: another spelling of the same manifest is current" \
+  0 "$status"
+rm -f "$work/alias"
+sync_ok "restore manifest header"
+
+grep -v '^# manifest: ' "$first" >"$work/headerless"
+cat "$work/headerless" >"$first"
+run check --manifest "$manifest"
+_assert_exit "header: a block missing its header line is drift" 3 "$status"
+_assert_contains "header: missing header reports stale" \
+  "$(record stale "$first")" "$(<"$logs/run.out")"
+sync_ok "restore header line"
+
+sed 's/^checked rule$/checked rule /' "$first" >"$work/trailing"
+cat "$work/trailing" >"$first"
+run check --manifest "$manifest"
+_assert_exit "stale: trailing whitespace inside the block is drift" 3 "$status"
+sync_ok "restore whitespace"
+sed 's/^    indented rule line/  indented rule line/' "$first" >"$work/indent"
+cat "$work/indent" >"$first"
+run check --manifest "$manifest"
+_assert_exit "stale: changed indentation inside the block is drift" 3 "$status"
+sync_ok "restore indentation"
+
+chmod 644 "$second"
+run check --manifest "$manifest"
+_assert_exit "mode: widened permissions are drift" 3 "$status"
+_assert_contains "mode: reports the widened target" \
+  "$(record mode "$second")" "$(<"$logs/run.out")"
+_assert_mode "read-only: check does not repair the mode" 644 "$second"
+cp "$second" "$work/second.mode"
+sed 's/^checked rule$/tampered rule/' "$work/second.mode" >"$second"
+run check --manifest "$manifest"
+_assert_contains "stale: stale content outranks a widened mode" \
+  "$(record stale "$second")" "$(<"$logs/run.out")"
+cat "$work/second.mode" >"$second"
+chmod 600 "$second"
+
+# Sync's chmod follows a symlinked target, so check reads that file's mode.
+mkdir -p "$out/real"
+mv "$second" "$out/real/AGENTS.md"
+ln -s "$out/real/AGENTS.md" "$second"
+run check --manifest "$manifest"
+_assert_exit "mode: a symlinked current target is current" 0 "$status"
+chmod 644 "$out/real/AGENTS.md"
+run check --manifest "$manifest"
+_assert_contains "mode: a widened symlinked target reports mode" \
+  "$(record mode "$second")" "$(<"$logs/run.out")"
+rm -f "$second"
+mv "$out/real/AGENTS.md" "$second"
+chmod 600 "$second"
+
+printf 'owner text only\n' >"$second"
+chmod 600 "$second"
+run check --manifest "$manifest"
+_assert_exit "unmanaged: a target without a block is drift" 3 "$status"
+_assert_contains "unmanaged: reports the target" \
+  "$(record unmanaged "$second")" "$(<"$logs/run.out")"
+sync_ok "after unmanaged"
+
+cp "$second" "$work/second.good"
+printf '# agent-rules-sync:aggregate begin\nunterminated\n' >>"$second"
+run check --manifest "$manifest"
+_assert_exit "malformed: an unterminated block is drift" 3 "$status"
+_assert_contains "malformed: reports the target" \
+  "$(record malformed "$second")" "$(<"$logs/run.out")"
+sync_status_out=$(HOME="$home" XDG_CONFIG_HOME="$config" XDG_STATE_HOME="$state" \
+  "$cli" --manifest "$manifest" 2>&1)
+_assert_contains "malformed: matches the state sync refuses to touch" \
+  "malformed managed block" "$sync_status_out"
+cat "$work/second.good" >"$second"
+run check --manifest "$manifest"
+_assert_exit "setup: malformed block removed" 0 "$status"
+
+{
+  cat "$work/second.good"
+  printf '\n'
+  cat "$work/second.good"
+} >"$second"
+run check --manifest "$manifest"
+_assert_exit "stale: a duplicated provider block is drift" 3 "$status"
+_assert_contains "stale: duplicate block reports the target" \
+  "$(record stale "$second")" "$(<"$logs/run.out")"
+
+{
+  cat "$work/second.good"
+  printf '\n# dot-managed:agent-rules:aggregate begin\nold rule\n'
+  printf '# dot-managed:agent-rules:aggregate end\n'
+} >"$second"
+run check --manifest "$manifest"
+_assert_exit "stale: a leftover retired dot block is drift" 3 "$status"
+_assert_contains "stale: retired block reports the target" \
+  "$(record stale "$second")" "$(<"$logs/run.out")"
+cat "$work/second.good" >"$second"
+
+rm -f "$second"
+mkdir -p "$second"
+run check --manifest "$manifest"
+_assert_exit "not-file: a directory target is drift" 3 "$status"
+_assert_contains "not-file: reports the target" \
+  "$(record not-file "$second")" "$(<"$logs/run.out")"
+rmdir "$second"
+cp "$work/second.good" "$second"
+chmod 600 "$second"
+
+if [[ "$(id -u)" -ne 0 ]]; then
+  chmod 000 "$second"
+  run check --manifest "$manifest"
+  _assert_exit "input: an unreadable target cannot be checked" 1 "$status"
+  _assert_contains "input: unreadable-target error names it" \
+    "cannot read target: $second" "$(<"$logs/run.err")"
+  chmod 600 "$second"
+fi
+
+run check --manifest "$manifest"
+_assert_exit "current: all repairs check clean" 0 "$status"
+
+# --- A manifest without rules expects sync to prune, not publish. ---
+
+cat >"$work/empty.tsv" <<EOF
+version	agent-rules-sync-manifest-v1
+rule-root	$rules
+playbook-root	$playbooks
+target-file	$first
+target-file	$out/never/AGENTS.md
+EOF
+run check --manifest "$work/empty.tsv"
+_assert_exit "prune: a remaining block is drift without rules" 3 "$status"
+_assert_eq "prune: a remaining block is stale; an absent target is current" \
+  "$(record stale "$first")"$'\n'"$(record current "$out/never/AGENTS.md")" \
+  "$(<"$logs/run.out")"
+ln -s "$out/nowhere" "$out/dangling.md"
+cat >"$work/dangling.tsv" <<EOF
+version	agent-rules-sync-manifest-v1
+rule-root	$rules
+playbook-root	$playbooks
+target-file	$out/dangling.md
+EOF
+run check --manifest "$work/dangling.tsv"
+_assert_exit "prune: a dangling symlink is drift without rules" 3 "$status"
+_assert_eq "prune: sync refuses to prune a dangling symlink" \
+  "$(record not-file "$out/dangling.md")" "$(<"$logs/run.out")"
+cat >"$work/dangling.tsv" <<EOF
+version	agent-rules-sync-manifest-v1
+rule-root	$rules
+playbook-root	$playbooks
+rule	$rules/000-main.md
+playbook	git/flow.md	$playbooks/git/flow.md
+target-file	$out/dangling.md
+EOF
+run check --manifest "$work/dangling.tsv"
+_assert_eq "missing: publication replaces a dangling symlink like a missing file" \
+  "$(record missing "$out/dangling.md")" "$(<"$logs/run.out")"
+rm -f "$out/dangling.md"
+
+run --manifest "$work/empty.tsv"
+_assert_exit "setup: empty-manifest sync prunes" 0 "$status"
+run check --manifest "$work/empty.tsv"
+_assert_exit "prune: owner prose without a block is current" 0 "$status"
+
+# --- A manifest without targets has nothing to report. ---
+
+cat >"$work/none.tsv" <<EOF
+version	agent-rules-sync-manifest-v1
+rule-root	$rules
+playbook-root	$playbooks
+rule	$rules/000-main.md
+playbook	git/flow.md	$playbooks/git/flow.md
+EOF
+run check --manifest "$work/none.tsv"
+_assert_exit "no targets: check succeeds" 0 "$status"
+_assert_eq "no targets: check reports nothing" "" "$(<"$logs/run.out")"
+
+_test_summary
