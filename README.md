@@ -13,8 +13,8 @@ and more. `agent-rules-sync` builds all of them from one ordered set of small
 Markdown fragments. It supports Claude Code, Codex, Gemini CLI, OpenCode, Muse,
 Grok, and any other file path you name.
 
-Project-level tools such as ruler and rulesync already turn one rules source
-into many agent files inside a repository. This tool is different in three
+Tools such as ruler and rulesync already turn one rules source into many
+agent files, mainly for project repositories. This tool is different in three
 ways:
 
 - **User-global, not per-project.** It targets the home-level rule files each
