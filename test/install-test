@@ -3,7 +3,7 @@
 
 set -o pipefail
 
-repo_root=$(cd "${BASH_SOURCE[0]%/*}/.." && pwd -P) || exit 1
+repo_root=$(CDPATH='' cd "${BASH_SOURCE[0]%/*}/.." && pwd -P) || exit 1
 # shellcheck source=lib/test.sh
 . "$repo_root/test/lib/test.sh"
 
