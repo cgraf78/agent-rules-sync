@@ -3,7 +3,7 @@
 
 set -u
 
-repo_root=$(cd "${BASH_SOURCE[0]%/*}/.." && pwd -P) || exit 1
+repo_root=$(CDPATH='' cd "${BASH_SOURCE[0]%/*}/.." && pwd -P) || exit 1
 status=0
 
 for suite in \
