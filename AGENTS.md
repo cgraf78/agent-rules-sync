@@ -15,7 +15,7 @@ README.
 - `lib/agent-rules-sync/` is private and version-coupled to the launcher:
   `api.sh` (sync/check/uninstall sequencing), `manifest.sh` (parse and
   validate), `render.sh`, `targets.sh` (built-in target table), `managed.sh`
-  (block ownership), `lock.sh` (`mkdir` lock), `migration.sh` (target state
+  (block ownership), `lock.sh` (single-writer lock), `migration.sh` (target state
   and dot-era takeover), `paths.sh`, and `temp.sh`. See its `README.md`.
 - `examples/` is a synthetic setup; `test/cli-test` renders it, so keep it
   valid.

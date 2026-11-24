@@ -513,8 +513,8 @@ _assert_contains "locking: live-owner error is actionable" \
   "another agent-rules-sync invocation" "$(<"$lock_work/live.err")"
 _assert_file_missing "locking: rejected invocation publishes no target" "$lock_target"
 
-# Ubuntu's plain mkdir can report success after losing a creation race. The
-# bundled GNU command must still reject the existing lock and reclaim mutex.
+# Ubuntu's plain mkdir can report success after losing a creation race.
+# Neither a live owner nor a reclaim guard may depend on that false success.
 lock_bin="$lock_work/bin"
 mkdir "$lock_bin"
 lock_real_mkdir=$(type -P mkdir)
@@ -555,6 +555,147 @@ _assert_exit "locking: a dead owner's lock is reclaimed" 0 "$?"
 _assert_file_exists "locking: reclaimed invocation publishes its target" \
   "$lock_target"
 _assert_path_missing "locking: successful invocation releases its lock" "$lock_dir"
+
+# Pause a CLI just after the primary lock path becomes visible. On the old
+# directory protocol this is its chmod, before the PID write. On the atomic
+# protocol the link already holds the PID when the paused command returns.
+lock_pause_bin="$lock_work/pause-bin"
+mkdir "$lock_pause_bin"
+lock_real_chmod=$(type -P chmod)
+lock_real_ln=$(type -P ln)
+lock_real_rm=$(type -P rm)
+cat >"$lock_pause_bin/lock-pause" <<'EOF'
+#!/usr/bin/env bash
+case "${0##*/}" in
+  chmod)
+    real="$TEST_REAL_CHMOD"
+    [[ $TEST_LOCK_PHASE != legacy-reclaim && $# -eq 2 &&
+      $2 == "$TEST_LOCK_PATH" ]] || exec "$real" "$@"
+    ;;
+  ln)
+    real="$TEST_REAL_LN"
+    [[ $TEST_LOCK_PHASE != legacy-reclaim && $# -eq 3 && $2 == */"${TEST_LOCK_PATH##*/}" &&
+      $3 == "${TEST_LOCK_PATH%/*}/" ]] || exec "$real" "$@"
+    ;;
+  rm)
+    real="$TEST_REAL_RM"
+    [[ $TEST_LOCK_PHASE == legacy-reclaim && $# -eq 2 &&
+      $2 == "$TEST_LOCK_PATH/pid" ]] || exec "$real" "$@"
+    ;;
+esac
+"$real" "$@" || exit "$?"
+: >"$TEST_LOCK_READY"
+deadline=$((SECONDS + 15))
+until [[ -f "$TEST_LOCK_RESUME" ]]; do
+  ((SECONDS < deadline)) || exit 1
+  sleep 0.02
+done
+EOF
+chmod +x "$lock_pause_bin/lock-pause"
+ln -s lock-pause "$lock_pause_bin/chmod"
+ln -s lock-pause "$lock_pause_bin/ln"
+ln -s lock-pause "$lock_pause_bin/rm"
+
+_start_paused_writer() {
+  local phase="$1"
+  HOME="$lock_home" XDG_STATE_HOME="$lock_state" PATH="$lock_pause_bin:$PATH" \
+    TEST_REAL_CHMOD="$lock_real_chmod" TEST_REAL_LN="$lock_real_ln" \
+    TEST_REAL_RM="$lock_real_rm" TEST_LOCK_PHASE="$phase" \
+    TEST_LOCK_PATH="$lock_dir" TEST_LOCK_READY="$lock_work/$phase.ready" \
+    TEST_LOCK_RESUME="$lock_work/$phase.resume" \
+    "$cli" --manifest "$lock_manifest" \
+    >"$lock_work/$phase.out" 2>"$lock_work/$phase.err" &
+  lock_writer=$!
+}
+
+_wait_for_paused_writer() {
+  local phase="$1" deadline=$((SECONDS + 10))
+  until [[ -f "$lock_work/$phase.ready" ]]; do
+    if ! kill -0 "$lock_writer" 2>/dev/null || ((SECONDS >= deadline)); then
+      _fail "locking: writer did not reach $phase pause ($(cat "$lock_work/$phase.err"))"
+      return 1
+    fi
+    sleep 0.02
+  done
+}
+
+rm -- "$lock_target"
+_start_paused_writer concurrent
+if _wait_for_paused_writer concurrent; then
+  status=0
+  HOME="$lock_home" XDG_STATE_HOME="$lock_state" \
+    "$cli" --manifest "$lock_manifest" \
+    >"$lock_work/concurrent-contender.out" 2>"$lock_work/concurrent-contender.err" || status=$?
+  _assert_exit "locking: a contender cannot reclaim a paused writer's lock" 1 "$status"
+  _assert_file_missing "locking: paused writer's contender publishes nothing" "$lock_target"
+fi
+: >"$lock_work/concurrent.resume"
+status=0
+wait "$lock_writer" || status=$?
+_assert_exit "locking: the paused writer can complete" 0 "$status"
+_assert_file_exists "locking: the paused writer publishes after resuming" "$lock_target"
+_assert_path_missing "locking: the paused writer releases its lock" "$lock_dir"
+
+# The launcher must know which link it can clean even if TERM arrives before
+# the command that created it has returned to the launcher.
+_interrupt_paused_writer() {
+  local phase="$1" status=0
+  _start_paused_writer "$phase"
+  if _wait_for_paused_writer "$phase"; then
+    kill -TERM "$lock_writer"
+  fi
+  : >"$lock_work/$phase.resume"
+  wait "$lock_writer" || status=$?
+  _assert_exit "locking: $phase preserves TERM status" 143 "$status"
+  _assert_path_missing "locking: $phase leaves no primary lock" "$lock_dir"
+  _assert_path_missing "locking: $phase releases the reclaim guard" "$lock_dir.reclaim"
+}
+
+_interrupt_paused_writer interrupted-publication
+
+# TERM between removing a legacy PID and its now-empty lock directory must
+# finish that reclaim operation so the next writer can retry safely.
+mkdir "$lock_dir"
+printf '%s\n' 999999999 >"$lock_dir/pid"
+_interrupt_paused_writer legacy-reclaim
+rmdir "$lock_dir" 2>/dev/null || true
+
+# An interrupted older writer's ownerless directory is indistinguishable from
+# a legacy writer that is still starting. Preserve the directory and fail.
+mkdir "$lock_dir"
+status=0
+HOME="$lock_home" XDG_STATE_HOME="$lock_state" \
+  "$cli" --manifest "$lock_manifest" \
+  >"$lock_work/incomplete.out" 2>"$lock_work/incomplete.err" || status=$?
+_assert_exit "locking: an incomplete legacy directory is rejected" 1 "$status"
+_assert_contains "locking: incomplete owner gives recovery guidance" \
+  "verify no invocation is running" "$(<"$lock_work/incomplete.err")"
+if [[ -d "$lock_dir" && ! -L "$lock_dir" ]]; then
+  _pass "locking: the incomplete legacy directory remains"
+else
+  _fail "locking: the incomplete legacy directory remains"
+fi
+rmdir "$lock_dir"
+
+# Only a complete owner link in the provider's format may be reclaimed.
+lock_invalid_record=$'agent-rules-sync-owner/999999999/lock\n'
+ln -s "$lock_invalid_record" "$lock_dir"
+status=0
+HOME="$lock_home" XDG_STATE_HOME="$lock_state" \
+  "$cli" --manifest "$lock_manifest" \
+  >"$lock_work/invalid.out" 2>"$lock_work/invalid.err" || status=$?
+_assert_exit "locking: an unrecognized symbolic lock is rejected" 1 "$status"
+_assert_eq "locking: the unrecognized symbolic lock remains" \
+  "$lock_invalid_record." "$(readlink -n "$lock_dir" && printf '.')"
+rm -- "$lock_dir"
+
+ln -s 'agent-rules-sync-owner/999999999/lock' "$lock_dir"
+status=0
+HOME="$lock_home" XDG_STATE_HOME="$lock_state" \
+  "$cli" --manifest "$lock_manifest" \
+  >"$lock_work/stale-link.out" 2>"$lock_work/stale-link.err" || status=$?
+_assert_exit "locking: a dead owner's symbolic lock is reclaimed" 0 "$status"
+_assert_path_missing "locking: the reclaimed symbolic lock is released" "$lock_dir"
 
 # Restore a valid profile, then prove uninstall is driven by durable ownership
 # state rather than by a manifest that may already have disappeared.
