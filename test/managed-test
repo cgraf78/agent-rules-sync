@@ -513,9 +513,43 @@ _assert_contains "locking: live-owner error is actionable" \
   "another agent-rules-sync invocation" "$(<"$lock_work/live.err")"
 _assert_file_missing "locking: rejected invocation publishes no target" "$lock_target"
 
+# Ubuntu's plain mkdir can report success after losing a creation race. The
+# bundled GNU command must still reject the existing lock and reclaim mutex.
+lock_bin="$lock_work/bin"
+mkdir "$lock_bin"
+lock_real_mkdir=$(type -P mkdir)
+cat >"$lock_bin/mkdir" <<'EOF'
+#!/usr/bin/env bash
+if [[ $# -eq 1 && -d "$1" ]]; then exit 0; fi
+exec "$TEST_REAL_MKDIR" "$@"
+EOF
+cat >"$lock_bin/gnumkdir" <<'EOF'
+#!/usr/bin/env bash
+exec "$TEST_REAL_MKDIR" "$@"
+EOF
+chmod +x "$lock_bin/mkdir" "$lock_bin/gnumkdir"
+status=0
+HOME="$lock_home" XDG_STATE_HOME="$lock_state" PATH="$lock_bin:$PATH" \
+  TEST_REAL_MKDIR="$lock_real_mkdir" "$cli" --manifest "$lock_manifest" \
+  >"$lock_work/racy-live.out" 2>"$lock_work/racy-live.err" || status=$?
+_assert_exit "locking: a false-success mkdir cannot take a live lock" 1 "$status"
+_assert_file_content "locking: false-success mkdir preserves the owner" "$$" "$lock_dir/pid"
+_assert_file_missing "locking: false-success mkdir publishes no target" "$lock_target"
+
+mkdir -p "$lock_dir" "$lock_dir.reclaim"
 printf '%s\n' 999999999 >"$lock_dir/pid"
-HOME="$lock_home" XDG_STATE_HOME="$lock_state" \
-  "$cli" --manifest "$lock_manifest" \
+status=0
+HOME="$lock_home" XDG_STATE_HOME="$lock_state" PATH="$lock_bin:$PATH" \
+  TEST_REAL_MKDIR="$lock_real_mkdir" "$cli" --manifest "$lock_manifest" \
+  >"$lock_work/racy-reclaim.out" 2>"$lock_work/racy-reclaim.err" || status=$?
+_assert_exit "locking: a false-success mkdir cannot take the reclaim mutex" 1 "$status"
+_assert_file_content "locking: the reclaim holder's lock remains" 999999999 "$lock_dir/pid"
+rmdir "$lock_dir.reclaim" 2>/dev/null || true
+
+mkdir -p "$lock_dir"
+printf '%s\n' 999999999 >"$lock_dir/pid"
+HOME="$lock_home" XDG_STATE_HOME="$lock_state" PATH="$lock_bin:$PATH" \
+  TEST_REAL_MKDIR="$lock_real_mkdir" "$cli" --manifest "$lock_manifest" \
   >"$lock_work/stale.out" 2>"$lock_work/stale.err"
 _assert_exit "locking: a dead owner's lock is reclaimed" 0 "$?"
 _assert_file_exists "locking: reclaimed invocation publishes its target" \
