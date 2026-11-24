@@ -686,7 +686,7 @@ HOME="$lock_home" XDG_STATE_HOME="$lock_state" \
   >"$lock_work/invalid.out" 2>"$lock_work/invalid.err" || status=$?
 _assert_exit "locking: an unrecognized symbolic lock is rejected" 1 "$status"
 _assert_eq "locking: the unrecognized symbolic lock remains" \
-  "$lock_invalid_record"$'\n.' "$(readlink "$lock_dir" && printf '.')"
+  "$lock_invalid_record." "$(readlink -n "$lock_dir" && printf '.')"
 rm -- "$lock_dir"
 
 ln -s 'agent-rules-sync-owner/999999999/lock' "$lock_dir"

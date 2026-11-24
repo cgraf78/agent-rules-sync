@@ -27,9 +27,10 @@ _agent_rules_publish_lock() {
 
 _agent_rules_read_lock_link() {
   local record
-  # Keep any newline in the link value for exact format and ownership checks.
-  record=$(readlink "$1" 2>/dev/null && printf '.') || return 1
-  REPLY=${record%$'\n.'}
+  # Read without an output delimiter, then keep Bash from stripping a
+  # trailing newline that belongs to the link itself.
+  record=$(readlink -n "$1" 2>/dev/null && printf '.') || return 1
+  REPLY=${record%.}
 }
 
 _agent_rules_lock_owner() {
