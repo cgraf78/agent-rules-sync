@@ -20,9 +20,19 @@ _agent_rules_lock_owner_is_live() {
   kill -0 "$owner" 2>/dev/null
 }
 
+_agent_rules_lock_mkdir() {
+  # Ubuntu ships GNU mkdir alongside uutils, whose mkdir can report success
+  # after losing the directory creation race.
+  if type -P gnumkdir >/dev/null 2>&1; then
+    command gnumkdir "$1"
+  else
+    mkdir "$1"
+  fi
+}
+
 _agent_rules_create_lock() {
   local lock="$1"
-  mkdir "$lock" 2>/dev/null || return 1
+  _agent_rules_lock_mkdir "$lock" 2>/dev/null || return 1
   if ! chmod 700 "$lock" || ! printf '%s\n' "$$" >"$lock/pid" ||
     ! chmod 600 "$lock/pid"; then
     rm -f "$lock/pid" 2>/dev/null || true
@@ -59,7 +69,7 @@ _agent_rules_acquire_lock() {
   # gate, two processes that observe one stale PID could both remove and then
   # replace the primary lock.
   reclaim="$lock.reclaim"
-  if ! mkdir "$reclaim" 2>/dev/null; then
+  if ! _agent_rules_lock_mkdir "$reclaim" 2>/dev/null; then
     _agent_rules_error "another agent-rules-sync invocation is acquiring the lock"
     return 1
   fi
