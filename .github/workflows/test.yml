@@ -19,7 +19,7 @@ jobs:
   shell:
     # The full shared matrix exercises the same Bash implementation and common
     # Unix tools on Linux, macOS, and Termux.
-    uses: cgraf78/actions/.github/workflows/shell-ci.yml@fa46009e947ced9ab40dfa59049ae2d725f97480
+    uses: cgraf78/actions/.github/workflows/shell-ci.yml@7cc897229a80517e83f09acf989f2da5889961ad
     with:
       matrix-set: full
       profiles: base
@@ -45,4 +45,4 @@ jobs:
       # GitHub resolves literal `uses:` refs before a job can read repository
       # files, so the lock cannot be interpolated. This gate verifies every
       # unavoidable reusable-workflow ref matches the reviewed dependency pin.
-      - uses: cgraf78/actions/.github/actions/verify-consumer-sync@fa46009e947ced9ab40dfa59049ae2d725f97480
+      - uses: cgraf78/actions/.github/actions/verify-consumer-sync@7cc897229a80517e83f09acf989f2da5889961ad
