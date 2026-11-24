@@ -55,10 +55,13 @@ not a filesystem-wide transaction. If a later mutation fails, durable state is
 not advanced, so the next reconciliation retries the full target set and stale
 cleanup.
 
-A portable private `mkdir` lock serializes publication, pruning, and inventory
-updates. Active ownership fails a second invocation before mutation, while a
-dead PID can be reclaimed behind a separate atomic reclaim gate. This avoids a
-dependency on `flock`, which is not present on every supported macOS host.
+An atomic symbolic link carries the writer's PID in the private state
+directory. A second link serializes lock creation, stale-owner reclamation, and
+lock removal. Its owner can remove it after each operation. An abandoned guard
+requires operator cleanup because the dead process may have left a filesystem
+command running. A legacy lock directory is reclaimable when it contains only
+a valid dead owner's PID. Both lock operations use standard utilities available
+on macOS, Linux, and Termux.
 
 Destination mode is `0600`, including mode-only repair when content is already
 current. A newly created immediate parent is `0700`, while an existing parent

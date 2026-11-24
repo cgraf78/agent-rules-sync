@@ -265,11 +265,16 @@ unmanaged text remains.
 built-ins, then removes provider state. It does not delete manifests, source
 fragments, playbooks, unmanaged target text, or unrecorded custom files.
 
-Sync and uninstall use a private `mkdir` lock beside the target inventory. An
-active owner makes a concurrent invocation fail before mutation; a dead PID is
-reclaimed conservatively. This keeps publication, stale pruning, and inventory
-replacement under one writer without requiring the non-portable `flock`
-command.
+Sync and uninstall atomically publish a symbolic link containing the owner's
+PID in the private state directory beside the target inventory. An active owner
+makes a concurrent invocation fail before publishing or pruning any targets.
+Locks with a dead PID are reclaimed, including directories with a valid `pid`
+file left by older versions. This keeps publication, stale pruning, and
+inventory replacement under one writer without requiring `flock`.
+
+If an earlier version left an incomplete `lock` directory or an interrupted
+lock operation left `lock.reclaim`, verify that all invocations and their
+child processes have stopped before removing the affected entry and retrying.
 
 ## Checking for drift
 
